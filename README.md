@@ -75,8 +75,10 @@ O copia la carpeta `textos` del artefacto a `data/textos`.
 
 ```powershell
 cd backend
-.\.venv\Scripts\python scripts\seed_corpus.py --limit 5
+.\.venv\Scripts\python scripts\seed_corpus.py --limit 6
 ```
+
+Esto indexa `data/samples/*.txt` y guías prioritarias de apendicectomía (plan de cuidado, instrucciones postoperatorias, etc.) si `data/textos` está disponible.
 
 ### 4. Levantar
 

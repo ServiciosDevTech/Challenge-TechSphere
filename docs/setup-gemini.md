@@ -15,10 +15,10 @@ Edita el archivo `.env` en la raíz de `Challenge-TechSphere`:
 
 ```env
 GOOGLE_API_KEY=pega_aqui_tu_key
-GEMINI_MODEL=gemini-flash-latest
+GEMINI_MODEL=gemini-2.0-flash-lite
 ```
 
-> Algunos IDs (`gemini-2.5-flash`, `gemini-1.5-flash`) pueden devolver 404 para cuentas nuevas. Usa `gemini-flash-latest` u otro Flash vigente en AI Studio. El agente además prueba automáticamente modelos Flash de respaldo si el configurado falla.
+> Usa un Flash **lite** para menor latencia (`gemini-2.0-flash-lite` o `gemini-flash-lite-latest`). Si falla, el agente prueba otros Flash automáticamente. Evita IDs que den 404 a cuentas nuevas (`gemini-2.5-flash`, `gemini-1.5-flash`).
 
 ## 3. Reiniciar el backend
 

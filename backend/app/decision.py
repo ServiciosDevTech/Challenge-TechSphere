@@ -23,6 +23,9 @@ ALARM_PATTERNS = [
 
 WATCH_PATTERNS = [
     r"dolor\s*(de\s*)?[5-7]\b",
+    r"(?:dolor|duele|siento|nivel|escala).{0,24}\b([5-7]|cinco|seis|siete)\b",
+    r"\b(lo\s+)?siento\s+(un\s+)?([5-7]|cinco|seis|siete)\b",
+    r"\b([5-7]|cinco|seis|siete)\s*(/10|de\s*diez)?\b",
     r"fiebre\s*(bajita|leve)|calentura",
     r"n[aá]useas",
     r"herida\s*(un\s*poco\s*)?(roja|inflam)",
@@ -33,10 +36,62 @@ WATCH_PATTERNS = [
 REASSURING_PATTERNS = [
     r"mejor(ando|e)|ya\s*estoy\s*mejor",
     r"dolor\s*(de\s*)?[0-3]\b|casi\s*nada|apenas",
+    r"(?:dolor|duele|siento|nivel).{0,24}\b([0-3]|cero|uno|dos|tres)\b",
     r"sin\s*fiebre|no\s*tengo\s*fiebre",
     r"herida\s*(bien|limpia|normal)",
     r"caminando|ya\s*camino",
 ]
+
+PAIN_SCORE_PATTERN = re.compile(
+    r"(?:dolor|duele|siento|nivel|escala|es\s+un|como\s+un).{0,24}?"
+    r"\b(?P<num>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b"
+    r"|\b(?P<num2>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
+    r"\s*(?:/10|de\s*diez)\b",
+    re.IGNORECASE,
+)
+
+_WORD_TO_SCORE = {
+    "cero": 0,
+    "uno": 1,
+    "dos": 2,
+    "tres": 3,
+    "cuatro": 4,
+    "cinco": 5,
+    "seis": 6,
+    "siete": 7,
+    "ocho": 8,
+    "nueve": 9,
+    "diez": 10,
+}
+
+
+def extract_pain_score(text: str, history_text: str = "") -> int | None:
+    """Extrae NRS 0-10 del mensaje o del contexto reciente de dolor."""
+    combined = f"{history_text}\n{text}".lower()
+    # Preferir el mensaje actual
+    for candidate in (text, combined):
+        match = PAIN_SCORE_PATTERN.search(candidate.lower())
+        if not match:
+            # Respuesta corta tipo "un seis" / "6"
+            short = re.search(
+                r"\b(un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b",
+                candidate.lower(),
+            )
+            if short and (
+                "dolor" in combined
+                or "herida" in combined
+                or "escala" in combined
+                or "cero al diez" in combined
+                or "0 al 10" in combined
+            ):
+                token = short.group("n")
+                return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
+            continue
+        token = match.group("num") or match.group("num2")
+        if not token:
+            continue
+        return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
+    return None
 
 ESCALATE_REQUEST_PATTERNS = [
     r"esc[aá]l(?:a|alo|arlo|e|arlo|eme|amelo|ámelo)",
@@ -100,6 +155,15 @@ def decide_from_text(
     """
     signals = collect_signals(patient_text)
     wants_escalate = user_requests_escalation(patient_text, history_text)
+    pain = extract_pain_score(patient_text, history_text)
+
+    if pain is not None and pain >= 8:
+        return AgentDecision(
+            criticality=Criticality.rojo,
+            action=DecisionAction.escalate,
+            rationale=f"Dolor intenso reportado (NRS={pain}). Se prioriza evaluación humana.",
+            escalate=True,
+        )
 
     if (
         signals.alarm_hits
@@ -115,6 +179,17 @@ def decide_from_text(
                 "o el modelo recomendó escalar. Se prioriza evaluación humana."
             ),
             escalate=True,
+        )
+
+    if pain is not None and 5 <= pain <= 7:
+        return AgentDecision(
+            criticality=Criticality.amarillo,
+            action=DecisionAction.continue_care,
+            rationale=(
+                f"Dolor moderado (NRS={pain}): vigilancia estrecha, indagar alarma "
+                "y mantener cuidados en casa si no hay otros signos."
+            ),
+            escalate=False,
         )
 
     if not has_rag_evidence and llm_criticality in (

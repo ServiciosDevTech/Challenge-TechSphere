@@ -247,9 +247,17 @@ class DynamicRAG:
         docs = result.get("documents") or [[]]
         metas = result.get("metadatas") or [[]]
         dists = result.get("distances") or [[]]
+        min_score = self.settings.rag_min_score
 
         for text, meta, dist in zip(docs[0], metas[0], dists[0], strict=False):
             score = 1.0 - float(dist) if dist is not None else None
+            # Con un solo documento indexado no filtramos por score (demo G5).
+            if (
+                self._collection.count() > 1
+                and score is not None
+                and score < min_score
+            ):
+                continue
             citation = Citation(
                 document_id=str(meta.get("document_id", "")),
                 filename=str(meta.get("filename", "")),
@@ -259,6 +267,11 @@ class DynamicRAG:
             )
             hits.append(RagHit(text=text, citation=citation))
         return hits
+
+    def warmup(self) -> None:
+        """Precarga el modelo de embeddings para evitar cold start en la 1.ª llamada."""
+        self._embed(["warmup postoperatorio dolor fiebre"])
+        logger.info("RAG embeddings warmed up")
 
     def count_ready(self) -> int:
         return self.registry.count_ready()

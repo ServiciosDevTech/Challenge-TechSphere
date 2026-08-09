@@ -45,12 +45,14 @@ Reglas clínicas obligatorias:
 
 Debes responder ÚNICAMENTE con JSON válido (sin markdown) con esta forma:
 {
-  "reply": "texto corto para el paciente",
+  "reply": "texto corto para el paciente en español, frase completa",
   "criticality": "verde|amarillo|rojo|desconocido",
   "escalate": true/false,
   "needs_more_info": true/false,
   "rationale": "motivo clínico breve interno"
 }
+
+El campo reply NUNCA debe contener nombres de campos (criticality, escalate, needs_more_info) ni JSON crudo.
 """
 
 # IDs que suelen fallar para cuentas nuevas / deprecados
@@ -60,13 +62,14 @@ MODEL_SKIP = {
     "gemini-1.5-flash-latest",
 }
 
-# Cadena de respaldo si el modelo configurado no responde
+# Cadena de respaldo si el modelo configurado no responde (lite primero = menos latencia)
 MODEL_FALLBACKS = (
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite-preview",
     "gemini-2.0-flash-lite",
-    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest",
     "gemini-2.0-flash",
+    "gemini-3.5-flash",
 )
 
 
@@ -108,13 +111,24 @@ class ClinicalAgent:
         return out
 
     def _generate(self, prompt: str):
+        from google.genai import types
+
         client = self._get_client()
         last_error: Exception | None = None
+        # Sin response_mime_type: algunos Flash truncan el JSON y rompen el reply.
+        config = types.GenerateContentConfig(
+            temperature=0.35,
+            max_output_tokens=512,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
         for model in self._model_candidates():
             try:
                 response = client.models.generate_content(
                     model=model,
                     contents=prompt,
+                    config=config,
                 )
                 self._resolved_model = model
                 if model != self.settings.gemini_model:
@@ -136,11 +150,13 @@ class ClinicalAgent:
     def _build_context(self, hits: list) -> str:
         if not hits:
             return "(Sin fragmentos recuperados de la base de conocimiento.)"
+        limit = self.settings.rag_context_chars
         blocks = []
         for i, hit in enumerate(hits, start=1):
             c = hit.citation
+            body = hit.text if len(hit.text) <= limit else hit.text[:limit] + "…"
             blocks.append(
-                f"[{i}] Fuente: {c.filename} (doc={c.document_id}, pág={c.page})\n{hit.text}"
+                f"[{i}] Fuente: {c.filename} (doc={c.document_id}, pág={c.page})\n{body}"
             )
         return "\n\n".join(blocks)
 
@@ -181,7 +197,9 @@ class ClinicalAgent:
                 escalate=False,
             )
         else:
-            reply = self._spoken_summary_from_evidence(message, evidence_texts or [])
+            reply = self._spoken_summary_from_evidence(
+                message, evidence_texts or [], history_text=history_text
+            )
             decision = decide_from_text(
                 message,
                 has_rag_evidence=True,
@@ -202,10 +220,18 @@ class ClinicalAgent:
             metrics={"llm_invocations": 0, "rag_queries": 1, "mode": reason},
         )
 
-    def _spoken_summary_from_evidence(self, message: str, evidence_texts: list[str]) -> str:
+    def _spoken_summary_from_evidence(
+        self,
+        message: str,
+        evidence_texts: list[str],
+        history_text: str = "",
+    ) -> str:
         """Parafraseo breve hablable cuando no hay Gemini (no pegar el PDF crudo)."""
+        from app.decision import extract_pain_score
+
         blob = " ".join(evidence_texts).lower()
         msg = message.lower()
+        pain = extract_pain_score(message, history_text)
 
         # Alarmas del paciente primero: nunca responder con un protocolo irrelevante
         if re.search(
@@ -218,6 +244,27 @@ class ClinicalAgent:
                 "Voy a escalar tu caso para que te atiendan de inmediato."
             )
 
+        if pain is not None and pain >= 8:
+            return (
+                f"Un dolor de {pain} es intenso. Voy a escalar tu caso para que te "
+                "evalúe personal médico ahora. Mantén la calma y busca ayuda cercana."
+            )
+
+        if pain is not None and 5 <= pain <= 7:
+            return (
+                f"Gracias, un dolor de {pain} merece vigilancia. Puedes seguir cuidándote "
+                "en casa si no hay fiebre, pus ni falta de aire: camina con calma, no cargues "
+                "peso y observa la herida. Si sube de siete, hay fiebre o empeora, avísame "
+                "para escalar. ¿Tienes fiebre o secreción en la herida?"
+            )
+
+        if pain is not None and pain <= 4:
+            return (
+                f"Perfecto, un dolor de {pain} suele ser manejable en casa. Camina según "
+                "tolerancia, mantén la herida limpia y seca, y avísame si sube el dolor, "
+                "aparece fiebre o pus. ¿Quieres que revisemos otra molestia?"
+            )
+
         asks_zeta = any(k in msg for k in ("zeta-42", "zeta 42", "z42", "zeta42"))
         has_zeta = any(k in blob for k in ("zeta-42", "zeta 42", "zeta42"))
         if asks_zeta and has_zeta:
@@ -227,11 +274,20 @@ class ClinicalAgent:
                 "en la escala del cero al diez. ¿Quieres que te repita algún punto?"
             )
 
-        if any(k in blob for k in ("fiebre", "sangrado", "alarma", "urgencia")):
+        if re.search(r"camin|andar|pasear|moviliz", msg, re.IGNORECASE):
             return (
-                "Según la guía que tengo cargada, vigila fiebre, sangrado o dolor que no cede. "
-                "Si aparece alguno de esos signos, hay que escalar a personal médico. "
-                "¿Cómo te has sentido en las últimas horas?"
+                "Sí, puedes caminar según tu tolerancia, varias veces al día y sin forzar. "
+                "Evita levantar peso las primeras semanas. Si el dolor de la herida sube mucho "
+                "al caminar, detente y cuéntame. ¿En qué número del cero al diez lo sientes?"
+            )
+
+        if re.search(r"herida|dolor", msg, re.IGNORECASE) or (
+            "dolor" in history_text.lower() and re.search(r"\b\d\b|seis|cinco", msg)
+        ):
+            return (
+                "Me alegra que te sientas más o menos bien. Un dolor leve en la herida puede "
+                "ser esperable; camina con calma y mantén la herida limpia y seca. "
+                "¿El dolor es menor de cinco, y hay fiebre o pus?"
             )
 
         return (
@@ -241,23 +297,103 @@ class ClinicalAgent:
         )
 
     def _parse_llm_json(self, raw: str) -> dict[str, Any]:
-        text = raw.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
+        text = (raw or "").strip()
+        if not text:
             return {
-                "reply": text[:500],
+                "reply": "",
                 "criticality": "desconocido",
                 "escalate": False,
                 "needs_more_info": True,
-                "rationale": "Respuesta no estructurada del modelo.",
+                "rationale": "Respuesta vacía del modelo.",
             }
+
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+
+        candidates = [text]
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            candidates.insert(0, match.group(0))
+
+        for candidate in candidates:
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict):
+                    return data
+            except json.JSONDecodeError:
+                # Intentar cerrar JSON truncado
+                repaired = candidate.rstrip(", \n\r\t")
+                if not repaired.endswith("}"):
+                    repaired += "}"
+                try:
+                    data = json.loads(repaired)
+                    if isinstance(data, dict):
+                        return data
+                except json.JSONDecodeError:
+                    pass
+
+        # Extraer campos sueltos si el JSON vino roto
+        reply_match = re.search(
+            r'"reply"\s*:\s*"((?:\\.|[^"\\])*)"',
+            text,
+            re.DOTALL,
+        )
+        crit_match = re.search(
+            r'"criticality"\s*:\s*"(verde|amarillo|rojo|desconocido)"',
+            text,
+            re.IGNORECASE,
+        )
+        esc_match = re.search(r'"escalate"\s*:\s*(true|false)', text, re.IGNORECASE)
+        more_match = re.search(
+            r'"needs_more_info"\s*:\s*(true|false)', text, re.IGNORECASE
+        )
+
+        reply = ""
+        if reply_match:
+            reply = (
+                reply_match.group(1)
+                .replace('\\"', '"')
+                .replace("\\n", " ")
+                .replace("\\t", " ")
+            )
+
+        return {
+            "reply": reply,
+            "criticality": (crit_match.group(1).lower() if crit_match else "desconocido"),
+            "escalate": bool(esc_match and esc_match.group(1).lower() == "true"),
+            "needs_more_info": bool(
+                more_match and more_match.group(1).lower() == "true"
+            )
+            if more_match
+            else True,
+            "rationale": "JSON parcial reparado del modelo.",
+            "_raw_broken": True,
+        }
+
+    @staticmethod
+    def _is_bad_patient_reply(reply: str) -> bool:
+        text = (reply or "").strip()
+        if len(text) < 12:
+            return True
+        lower = text.lower()
+        bad_markers = (
+            "criticality",
+            "escalate",
+            "needs_more",
+            "rationale",
+            '"reply"',
+            "{",
+            "}",
+            "amarillo,",
+            "verde,",
+            "rojo,",
+        )
+        if any(m in lower for m in bad_markers):
+            return True
+        # Debe parecer frase hablada en español (letras + espacios)
+        letters = sum(ch.isalpha() for ch in text)
+        return letters < max(8, len(text) // 3)
 
     def respond(
         self,
@@ -328,7 +464,15 @@ class ClinicalAgent:
             return result
         llm_ms = (time.perf_counter() - t1) * 1000
         raw = getattr(response, "text", None) or ""
+        # Algunos SDKs exponen el texto en candidates
+        if not raw and getattr(response, "candidates", None):
+            try:
+                parts = response.candidates[0].content.parts
+                raw = "".join(getattr(p, "text", "") or "" for p in parts)
+            except Exception:  # noqa: BLE001
+                raw = ""
         parsed = self._parse_llm_json(raw)
+        logger.debug("LLM raw (%s): %s", used_model, raw[:300])
 
         llm_crit = parse_criticality(str(parsed.get("criticality", "desconocido")))
         decision = decide_from_text(
@@ -341,12 +485,39 @@ class ClinicalAgent:
         if parsed.get("rationale") and not decision.escalate:
             decision.rationale = str(parsed["rationale"])[:400]
         elif parsed.get("rationale") and decision.escalate:
-            # Mantener rationale de seguridad si escalamos por heurística
             decision.rationale = (
                 f"{decision.rationale} | modelo: {str(parsed['rationale'])[:200]}"
             )
 
         reply = str(parsed.get("reply") or "").strip()
+        if self._is_bad_patient_reply(reply):
+            logger.warning(
+                "Reply inválido del modelo (%r); usando respuesta hablable segura",
+                reply[:120],
+            )
+            if decision.escalate:
+                reply = (
+                    "Por tu seguridad, este caso debe ser evaluado por personal médico "
+                    "ahora. Voy a escalarlo."
+                )
+            else:
+                reply = self._spoken_summary_from_evidence(
+                    safe_message,
+                    [h.text for h in hits],
+                    history_text=history_txt,
+                )
+                # Recalcular decisión sobre el mensaje (no contaminar con JSON roto)
+                decision = decide_from_text(
+                    safe_message,
+                    has_rag_evidence=has_evidence,
+                    history_text=history_txt,
+                )
+                if decision.escalate:
+                    reply = (
+                        "Lo que describes suena a un signo de alarma. Voy a escalar tu caso "
+                        "para que te evalúe personal médico ahora."
+                    )
+
         if not reply:
             reply = (
                 "Gracias por la información. Déjame confirmar con el equipo médico "
@@ -354,7 +525,11 @@ class ClinicalAgent:
             )
 
         if decision.escalate:
-            if "médic" not in reply.lower() and "urgenc" not in reply.lower() and "escal" not in reply.lower():
+            if (
+                "médic" not in reply.lower()
+                and "urgenc" not in reply.lower()
+                and "escal" not in reply.lower()
+            ):
                 reply = (
                     "Por tu seguridad, este caso debe ser evaluado por personal médico "
                     "ahora. Voy a escalarlo."

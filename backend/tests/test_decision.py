@@ -73,6 +73,23 @@ def test_decision_verde_on_reassuring():
     assert decision.criticality == Criticality.verde
 
 
+def test_pain_score_seis_from_followup():
+    from app.decision import extract_pain_score
+
+    score = extract_pain_score(
+        "Lo siento un seis",
+        history_text="agente: ¿En qué número del cero al diez lo sientes?",
+    )
+    assert score == 6
+    decision = decide_from_text(
+        "Lo siento un seis",
+        has_rag_evidence=True,
+        history_text="agente: ¿En qué número del cero al diez lo sientes? paciente: me duele la herida",
+    )
+    assert decision.criticality == Criticality.amarillo
+    assert decision.escalate is False
+
+
 def test_decision_insufficient_without_rag():
     decision = decide_from_text(
         "¿Puedo tomar algo para el dolor?",

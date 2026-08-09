@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     google_api_key: str = ""
-    gemini_model: str = "gemini-flash-latest"
+    gemini_model: str = "gemini-2.0-flash-lite"
 
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
@@ -25,7 +25,9 @@ class Settings(BaseSettings):
     calls_dir: str = "./data/calls"
     metrics_dir: str = "./data/metrics"
 
-    rag_top_k: int = 5
+    rag_top_k: int = 3
+    rag_min_score: float = 0.28
+    rag_context_chars: int = 500
     chunk_size: int = 800
     chunk_overlap: int = 120
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
