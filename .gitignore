@@ -1,0 +1,54 @@
+# Environment and secrets
+.env
+.env.local
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Runtime data
+backend/data/chroma/
+backend/data/uploads/
+backend/data/calls/
+backend/data/metrics/
+*.log
+
+# Corpus clínico del reto (junction/copia local; rutas Windows demasiado largas)
+# Ver data/README.md — no versionar los PDF/Excel del artefacto
+data/dataset/
+data/textos/
+data/**/*.pdf
+data/**/*.xlsx
+
+# Asset suelto fuera de frontend/public
+src/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+.~lock.*#
+
+# LibreOffice lock files
+.~lock.*

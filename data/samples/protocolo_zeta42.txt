@@ -1,0 +1,6 @@
+Protocolo de prueba ZETA-42 para el reto Tech Sphere.
+
+Si el paciente menciona ZETA-42, indicale que debe elevar la cabecera de la cama a 30 grados
+y avisar al equipo de enfermeria si el dolor supera 7 en escala NRS.
+
+Este documento existe solo para demostrar actualizacion y eliminacion de conocimiento en caliente.
