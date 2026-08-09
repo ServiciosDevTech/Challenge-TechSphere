@@ -108,10 +108,10 @@ Abre:
 ## Modelo declarado (G3)
 
 - **Familia:** Google Gemini, gama Flash
-- **Variable:** `GEMINI_MODEL` (default `gemini-2.0-flash`)
+- **Variable:** `GEMINI_MODEL` (default `gemini-flash-latest`)
 - **Por qué:** familia permitida por el artefacto, ventana de contexto amplia para guías clínicas, free tier suficiente para demo, una sola API key.
 
-Si el snapshot deja de existir, usa el sucesor Flash vigente en AI Studio (misma familia).
+Si el snapshot deja de existir, el agente prueba automáticamente otros Flash (`gemini-3.1-flash-lite-preview`, `gemini-2.0-flash-lite`, etc.). Guía: [`docs/setup-gemini.md`](docs/setup-gemini.md).
 
 ## Métricas (obligatorias en README)
 

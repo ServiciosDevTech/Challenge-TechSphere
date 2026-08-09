@@ -45,6 +45,24 @@ def test_decision_escalates_on_alarm():
     assert decision.action == DecisionAction.escalate
 
 
+def test_decision_escalates_on_faltando_el_aire():
+    decision = decide_from_text(
+        "Necesito ayuda Me está faltando el aire",
+        has_rag_evidence=True,
+    )
+    assert decision.escalate is True
+    assert decision.criticality == Criticality.rojo
+
+
+def test_decision_escalates_on_user_confirm():
+    decision = decide_from_text(
+        "si escámelo porfa",
+        has_rag_evidence=False,
+        history_text="agente: ¿Quieres que escale el caso a un humano?",
+    )
+    assert decision.escalate is True
+
+
 def test_decision_verde_on_reassuring():
     decision = decide_from_text(
         "El dolor es de 2, casi nada, y sin fiebre",

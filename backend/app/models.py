@@ -125,4 +125,5 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     gemini_configured: bool
+    gemini_model: str
     documents_ready: int

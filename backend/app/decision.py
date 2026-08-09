@@ -11,7 +11,8 @@ ALARM_PATTERNS = [
     r"temperatura\s*(de\s*)?(3[89]|4\d)",
     r"sangrado\s*(abundante|mucho|que no para)",
     r"pus|supuraci[oó]n|secreci[oó]n\s*mal\s*oliente",
-    r"dificultad\s*(para\s*)?respirar|ahogo|falta\s*de\s*aire",
+    # Cubrir: "falta de aire", "faltando el aire", "me falta el aire", "sin aire"
+    r"dificultad\s*(para\s*)?respirar|ahogo|ahog|falta(?:ndo)?\s+(?:el\s+)?aire|me\s+falta\s+(?:el\s+)?aire|sin\s+aire|no\s+puedo\s+respirar",
     r"dolor\s*(insoportable|de\s*1[0]|del\s*diez|muy\s*fuerte|que no aguanto)",
     r"herida\s*(abierta|se\s*abri[oó]|dehis)",
     r"v[oó]mito\s*(persistente|que no para|mucho)",
@@ -37,6 +38,14 @@ REASSURING_PATTERNS = [
     r"caminando|ya\s*camino",
 ]
 
+ESCALATE_REQUEST_PATTERNS = [
+    r"esc[aá]l(?:a|alo|arlo|e|arlo|eme|amelo|ámelo)",
+    r"esc[aá]melo|escamelo",
+    r"pasa(?:me)?\s+(?:con\s+)?(?:un\s+)?humano",
+    r"quiero\s+(?:hablar\s+con\s+)?(?:un\s+)?(?:m[eé]dico|humano|enfermer)",
+    r"necesito\s+(?:un\s+)?(?:m[eé]dico|humano)",
+]
+
 
 @dataclass
 class DecisionSignals:
@@ -53,12 +62,36 @@ def collect_signals(text: str) -> DecisionSignals:
     return DecisionSignals(alarms, watches, reassure)
 
 
+def user_requests_escalation(text: str, history_text: str = "") -> bool:
+    """Detecta pedido explícito de escalar (incl. 'sí, escálalo' tras oferta previa)."""
+    lower = text.lower().strip()
+    if any(re.search(p, lower, re.IGNORECASE) for p in ESCALATE_REQUEST_PATTERNS):
+        return True
+
+    offered = bool(
+        re.search(
+            r"escale|escalar|humano|personal m[eé]dic",
+            history_text.lower(),
+            re.IGNORECASE,
+        )
+    )
+    affirmative = bool(
+        re.search(
+            r"^(s[ií]|sip|dale|ok|okay|porfa|por favor|claro|hagamos?lo)\b",
+            lower,
+            re.IGNORECASE,
+        )
+    )
+    return offered and affirmative
+
+
 def decide_from_text(
     patient_text: str,
     *,
     llm_criticality: Criticality | None = None,
     has_rag_evidence: bool = True,
     llm_wants_escalate: bool | None = None,
+    history_text: str = "",
 ) -> AgentDecision:
     """
     Motor de decisión con asimetría clínica: prioriza no perder alertas (rojo).
@@ -66,14 +99,20 @@ def decide_from_text(
     Combina señales heurísticas del relato del paciente con la salida del LLM.
     """
     signals = collect_signals(patient_text)
+    wants_escalate = user_requests_escalation(patient_text, history_text)
 
-    if signals.alarm_hits or llm_criticality == Criticality.rojo or llm_wants_escalate:
+    if (
+        signals.alarm_hits
+        or llm_criticality == Criticality.rojo
+        or llm_wants_escalate
+        or wants_escalate
+    ):
         return AgentDecision(
             criticality=Criticality.rojo,
             action=DecisionAction.escalate,
             rationale=(
-                "Se detectaron signos de alarma o el modelo recomendó escalar. "
-                "Se prioriza evaluación humana."
+                "Se detectaron signos de alarma, el paciente pidió escalar, "
+                "o el modelo recomendó escalar. Se prioriza evaluación humana."
             ),
             escalate=True,
         )

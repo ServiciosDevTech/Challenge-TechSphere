@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     google_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-flash-latest"
 
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000

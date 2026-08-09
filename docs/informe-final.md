@@ -16,9 +16,11 @@ El seguimiento postoperatorio temprano depende de personal humano, no escala bie
 
 ## 3. Modelo utilizado (declaración G3)
 
-- **Modelo:** Google Gemini Flash (`GEMINI_MODEL`, default `gemini-2.0-flash`)
+- **Modelo:** Google Gemini Flash (`GEMINI_MODEL`, default `gemini-flash-latest`)
 - **Familia permitida:** Google Gemini, gama Flash
 - **Por qué:** contexto amplio para guías, free tier, baja fricción de setup frente a modelos locales, alineado al artefacto oficial (no al resumen desactualizado del video que mencionaba Claude).
+
+> Nota: IDs puntuales cambian. Si uno falla (404), usa `gemini-flash-latest` u otro Flash vigente; el agente intenta respaldos automáticamente.
 
 ## 4. Prompting (evidencia)
 
@@ -36,7 +38,7 @@ El Decision Engine (`backend/app/decision.py`) actúa como harness de seguridad 
 
 ```env
 GOOGLE_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-flash-latest
 EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
 TTS_VOICE=es-CO-SalomeNeural
 RAG_TOP_K=5

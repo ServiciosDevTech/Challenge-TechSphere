@@ -35,10 +35,13 @@ router = APIRouter()
 def health() -> HealthResponse:
     settings = get_settings()
     rag = get_rag()
+    agent = get_agent()
+    active_model = agent._resolved_model or settings.gemini_model
     return HealthResponse(
         status="ok",
         version=__version__,
         gemini_configured=bool(settings.google_api_key),
+        gemini_model=active_model,
         documents_ready=rag.count_ready(),
     )
 
