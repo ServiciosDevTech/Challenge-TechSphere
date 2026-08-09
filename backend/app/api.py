@@ -43,6 +43,10 @@ def health() -> HealthResponse:
         gemini_configured=bool(settings.google_api_key),
         gemini_model=active_model,
         documents_ready=rag.count_ready(),
+        agent_name=settings.agent_name,
+        product_name=settings.product_name,
+        product_slogan=settings.product_slogan,
+        agent_tagline=settings.agent_tagline,
     )
 
 
@@ -107,8 +111,15 @@ def rag_query(body: QueryRequest) -> QueryResponse:
 
 @router.post("/calls/start", response_model=StartCallResponse)
 def start_call(body: StartCallRequest) -> StartCallResponse:
-    call_id, greeting = get_call_store().start(body)
-    return StartCallResponse(call_id=call_id, greeting=greeting)
+    settings = get_settings()
+    call_id, greeting, returning = get_call_store().start(body)
+    return StartCallResponse(
+        call_id=call_id,
+        greeting=greeting,
+        agent_name=settings.agent_name,
+        product_slogan=settings.product_slogan,
+        returning_patient=returning,
+    )
 
 
 @router.post("/calls/turn", response_model=ChatTurnResponse)
@@ -116,13 +127,14 @@ def call_turn(body: ChatTurnRequest) -> ChatTurnResponse:
     store = get_call_store()
     call_id = body.call_id
     if not call_id:
-        call_id, _ = store.start(StartCallRequest())
+        call_id, _, _ = store.start(StartCallRequest())
 
     result = get_agent().respond(
         message=body.message,
         history=body.history,
         patient_context=body.patient_context,
         call_id=call_id,
+        call_state=store.get_call_state(call_id),
     )
     result.call_id = call_id
     store.append_turn(
@@ -132,9 +144,9 @@ def call_turn(body: ChatTurnRequest) -> ChatTurnResponse:
         decision=result.decision,
         sources=result.sources,
         metrics=result.metrics,
+        call_state=result.call_state,
     )
     return result
-
 
 @router.post("/calls/{call_id}/end", response_model=EndCallResponse)
 def end_call(call_id: str) -> EndCallResponse:

@@ -15,6 +15,7 @@ from app.models import (
     Citation,
     StartCallRequest,
 )
+from app.persona import build_greeting, summarize_prior_call, update_call_state
 from app.utils import mask_pii, new_id
 
 
@@ -98,13 +99,17 @@ class CallStore:
     def _path(self, call_id: str) -> Path:
         return self.settings.calls_path / f"{call_id}.json"
 
-    def start(self, req: StartCallRequest) -> tuple[str, str]:
+    def start(self, req: StartCallRequest) -> tuple[str, str, bool]:
         call_id = new_id("call_")
-        name = req.patient_name or "paciente"
-        greeting = (
-            f"Hola {name.split()[0]}, soy PostOp Care, tu agente de seguimiento "
-            f"postoperatorio. ¿Cómo te has sentido desde la cirugía?"
+        prior = self.find_latest_for_patient(req.patient_name)
+        prior_summary = summarize_prior_call(prior) if prior else None
+        greeting = build_greeting(
+            agent_name=self.settings.agent_name,
+            patient_name=req.patient_name,
+            procedure=req.procedure,
+            prior_summary=prior_summary,
         )
+        seed_state: dict[str, Any] = {}
         record = {
             "call_id": call_id,
             "patient_id": req.patient_id,
@@ -117,6 +122,10 @@ class CallStore:
             "sources_used": [],
             "decisions": [],
             "symptoms": [],
+            # Memoria de llamada empieza limpia; el saludo ya menciona el resumen previo.
+            "call_state": seed_state,
+            "prior_call_id": (prior or {}).get("call_id"),
+            "prior_summary": prior_summary,
         }
         with self._lock:
             self._active[call_id] = record
@@ -124,7 +133,33 @@ class CallStore:
                 json.dumps(record, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-        return call_id, greeting
+        return call_id, greeting, bool(prior_summary)
+
+    def find_latest_for_patient(self, patient_name: str | None) -> dict[str, Any] | None:
+        if not patient_name or not patient_name.strip():
+            return None
+        needle = patient_name.strip().lower()
+        best: dict[str, Any] | None = None
+        best_ts = ""
+        for path in self.settings.calls_path.glob("call_*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            name = (data.get("patient_name") or "").strip().lower()
+            if name != needle:
+                continue
+            if not data.get("ended_at"):
+                continue
+            ts = str(data.get("ended_at") or data.get("started_at") or "")
+            if ts >= best_ts:
+                best_ts = ts
+                best = data
+        return best
+
+    def get_call_state(self, call_id: str) -> dict[str, Any]:
+        record = self.get(call_id) or {}
+        return dict(record.get("call_state") or {})
 
     def append_turn(
         self,
@@ -134,6 +169,7 @@ class CallStore:
         decision: AgentDecision,
         sources: list[Citation],
         metrics: dict[str, Any],
+        call_state: dict[str, Any] | None = None,
     ) -> None:
         with self._lock:
             record = self._active.get(call_id)
@@ -150,6 +186,13 @@ class CallStore:
                 {"role": "agent", "content": mask_pii(agent_reply)}
             )
             record["decisions"].append(decision.model_dump())
+            if call_state is not None:
+                record["call_state"] = call_state
+            else:
+                record["call_state"] = update_call_state(
+                    record.get("call_state"),
+                    user_message,
+                )
             for src in sources:
                 dumped = src.model_dump()
                 if dumped not in record["sources_used"]:

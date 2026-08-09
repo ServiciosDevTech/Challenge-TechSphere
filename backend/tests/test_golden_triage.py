@@ -31,6 +31,12 @@ GOLDEN_CASES = [
         "must_escalate": True,
     },
     {
+        "id": "rojo_fiebre_39",
+        "text": "Me siento mal, tengo fiebre, me medi y tengo 39 grados",
+        "expected": Criticality.rojo,
+        "must_escalate": True,
+    },
+    {
         "id": "amarillo_vigilancia",
         "text": "Tengo un poco de náuseas y el dolor está como en 6.",
         "expected": Criticality.amarillo,

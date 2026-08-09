@@ -36,7 +36,7 @@ flowchart TD
 3. El backend embebe la consulta, recupera top-k fragmentos en Chroma y llama a Gemini Flash con prompt clínico restringido.
 4. El **Decision Engine** combina señales heurísticas (alarma / vigilancia) con la criticidad del LLM. Asimetría clínica: prioriza no perder rojos.
 5. La UI muestra respuesta, criticidad y **fuentes** (`filename`, página, excerpt).
-6. TTS sintetiza la respuesta (`es-CO-SalomeNeural`).
+6. TTS sintetiza la respuesta (`es-CO-GonzaloNeural`, voz masculina colombiana).
 7. Al finalizar, se persiste resumen estructurado en `backend/data/calls/`.
 
 ## RAG dinámico (G5)

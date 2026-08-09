@@ -35,7 +35,7 @@ Detalle: [`docs/arquitectura.md`](docs/arquitectura.md)
 | Frontend | React + Vite + TypeScript |
 | RAG | ChromaDB + `paraphrase-multilingual-MiniLM-L12-v2` |
 | STT | Web Speech API (`es-CO`) |
-| TTS | edge-tts (`es-CO-SalomeNeural`) |
+| TTS | edge-tts (`es-CO-GonzaloNeural`) · agente **Beto** |
 
 ## Requisitos previos
 

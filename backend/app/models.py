@@ -76,6 +76,9 @@ class ChatTurnResponse(BaseModel):
     sources: list[Citation] = Field(default_factory=list)
     needs_more_info: bool = False
     metrics: dict[str, Any] = Field(default_factory=dict)
+    call_state: dict[str, Any] = Field(default_factory=dict)
+    consulted_rag: bool = False
+    agent_name: str = "Beto"
 
 
 class CallSummary(BaseModel):
@@ -101,6 +104,9 @@ class StartCallRequest(BaseModel):
 class StartCallResponse(BaseModel):
     call_id: str
     greeting: str
+    agent_name: str = "Beto"
+    product_slogan: str = "Asistente inteligente de seguimiento postoperatorio"
+    returning_patient: bool = False
 
 
 class EndCallResponse(BaseModel):
@@ -127,3 +133,7 @@ class HealthResponse(BaseModel):
     gemini_configured: bool
     gemini_model: str
     documents_ready: int
+    agent_name: str = "Beto"
+    product_name: str = "PostOp Care"
+    product_slogan: str = "Asistente inteligente de seguimiento postoperatorio"
+    agent_tagline: str = "Tu asistente de recuperación"

@@ -32,7 +32,15 @@ class Settings(BaseSettings):
     chunk_overlap: int = 120
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
-    tts_voice: str = "es-CO-SalomeNeural"
+    tts_voice: str = "es-CO-GonzaloNeural"
+    tts_rate: str = "-6%"
+    tts_pitch: str = "-1Hz"
+
+    # Identidad conversacional: producto = PostOp Care; agente = nombre propio
+    agent_name: str = "Beto"
+    product_name: str = "PostOp Care"
+    product_slogan: str = "Asistente inteligente de seguimiento postoperatorio"
+    agent_tagline: str = "Tu asistente de recuperación"
 
     @property
     def cors_origin_list(self) -> list[str]:

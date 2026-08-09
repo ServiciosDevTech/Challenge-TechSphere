@@ -9,25 +9,28 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Voces masculinas neurales (Colombia primero)
 FALLBACK_VOICES = (
-    "es-CO-SalomeNeural",
-    "es-MX-DaliaNeural",
-    "es-ES-ElviraNeural",
+    "es-CO-GonzaloNeural",
+    "es-MX-JorgeNeural",
+    "es-US-AlonsoNeural",
+    "es-PE-AlexNeural",
+    "es-ES-AlvaroNeural",
 )
 
 
 async def synthesize_speech(text: str, voice: str | None = None) -> bytes:
     settings = get_settings()
-    candidates = []
+    candidates: list[str] = []
     preferred = voice or settings.tts_voice
     candidates.append(preferred)
     for v in FALLBACK_VOICES:
         if v not in candidates:
             candidates.append(v)
 
-    # Un poco más lento y grave suena menos “robot”
-    rate = "-12%"
-    pitch = "-2Hz"
+    # Ritmo conversacional: un poco más lento, sin exceso de “robot”
+    rate = settings.tts_rate or "-6%"
+    pitch = settings.tts_pitch or "-1Hz"
 
     last_error: Exception | None = None
     for selected in candidates:
@@ -45,6 +48,7 @@ async def synthesize_speech(text: str, voice: str | None = None) -> bytes:
             audio = buffer.getvalue()
             if not audio:
                 raise RuntimeError(f"TTS vacío con voz {selected}")
+            logger.info("TTS ok voice=%s bytes=%s", selected, len(audio))
             return audio
         except Exception as exc:  # noqa: BLE001
             logger.warning("TTS falló con %s: %s", selected, exc)

@@ -7,8 +7,7 @@ from app.models import AgentDecision, Criticality, DecisionAction
 
 
 ALARM_PATTERNS = [
-    r"fiebre\s*(alta|de\s*3[89]|de\s*4\d|mayor)",
-    r"temperatura\s*(de\s*)?(3[89]|4\d)",
+    r"fiebre\s*(alta|mayor|muy\s*alta)",
     r"sangrado\s*(abundante|mucho|que no para)",
     r"pus|supuraci[oó]n|secreci[oó]n\s*mal\s*oliente",
     # Cubrir: "falta de aire", "faltando el aire", "me falta el aire", "sin aire"
@@ -18,15 +17,15 @@ ALARM_PATTERNS = [
     r"v[oó]mito\s*(persistente|que no para|mucho)",
     r"desmayo|me\s*desmay|p[eé]rdida\s*de\s*conocimiento",
     r"hinchaz[oó]n\s*(muy\s*)?(grande|severa)|pantorrilla\s*(roja|caliente|hinchada)",
-    r"pecho\s*(me\s*)?duele|dolor\s*en\s*el\s*pecho",
+    r"pecho\s*(me\s*)?duele|dolor\s*en\s*el\s*pecho|duele\s+el\s+pecho|me\s+duele\s+el\s+pecho",
 ]
 
 WATCH_PATTERNS = [
     r"dolor\s*(de\s*)?[5-7]\b",
-    r"(?:dolor|duele|siento|nivel|escala).{0,24}\b([5-7]|cinco|seis|siete)\b",
+    r"(?:dolor|duele|nivel|escala).{0,24}\b([5-7]|cinco|seis|siete)\b",
     r"\b(lo\s+)?siento\s+(un\s+)?([5-7]|cinco|seis|siete)\b",
-    r"\b([5-7]|cinco|seis|siete)\s*(/10|de\s*diez)?\b",
-    r"fiebre\s*(bajita|leve)|calentura",
+    r"\b([5-7]|cinco|seis|siete)\s*(/10|de\s*diez)\b",
+    r"fiebre\s*(bajita|leve)|calentura|algo\s+de\s+fiebre|un\s+poco\s+de\s+fiebre|tengo\s+fiebre",
     r"n[aá]useas",
     r"herida\s*(un\s*poco\s*)?(roja|inflam)",
     r"no\s*(puedo|pude)\s*dormir",
@@ -36,17 +35,34 @@ WATCH_PATTERNS = [
 REASSURING_PATTERNS = [
     r"mejor(ando|e)|ya\s*estoy\s*mejor",
     r"dolor\s*(de\s*)?[0-3]\b|casi\s*nada|apenas",
-    r"(?:dolor|duele|siento|nivel).{0,24}\b([0-3]|cero|uno|dos|tres)\b",
+    r"(?:dolor|duele|nivel).{0,24}\b([0-3]|cero|uno|dos|tres)\b",
     r"sin\s*fiebre|no\s*tengo\s*fiebre",
     r"herida\s*(bien|limpia|normal)",
     r"caminando|ya\s*camino",
 ]
 
+# Temperatura en °C: 38, 38.5, 39, 40, "39 grados", "fiebre de 39"
+_TEMP_TOKEN = r"(?P<temp>4\d(?:[.,]\d+)?|3[89](?:[.,]\d+)?)"
+TEMPERATURE_PATTERNS = [
+    re.compile(
+        rf"(?:fiebre|temperatura|term[oó]metro|me\s+medi|me\s+med[ií]).{{0,48}}{_TEMP_TOKEN}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"{_TEMP_TOKEN}\s*(?:grados|°\s*c|celsius|cent[ií]grados)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"(?:fiebre|temperatura)\s*(?:de|a|en|=|:)?\s*{_TEMP_TOKEN}",
+        re.IGNORECASE,
+    ),
+]
+
 PAIN_SCORE_PATTERN = re.compile(
-    r"(?:dolor|duele|siento|nivel|escala|es\s+un|como\s+un).{0,24}?"
+    r"(?:dolor|duele|nivel\s+de\s+dolor|escala|es\s+un|como\s+un).{0,24}?"
     r"\b(?P<num>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b"
     r"|\b(?P<num2>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
-    r"\s*(?:/10|de\s*diez)\b",
+    r"\s*(?:/10|de\s*diez|sobre\s*10|sobre\s*diez)\b",
     re.IGNORECASE,
 )
 
@@ -64,34 +80,7 @@ _WORD_TO_SCORE = {
     "diez": 10,
 }
 
-
-def extract_pain_score(text: str, history_text: str = "") -> int | None:
-    """Extrae NRS 0-10 del mensaje o del contexto reciente de dolor."""
-    combined = f"{history_text}\n{text}".lower()
-    # Preferir el mensaje actual
-    for candidate in (text, combined):
-        match = PAIN_SCORE_PATTERN.search(candidate.lower())
-        if not match:
-            # Respuesta corta tipo "un seis" / "6"
-            short = re.search(
-                r"\b(un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b",
-                candidate.lower(),
-            )
-            if short and (
-                "dolor" in combined
-                or "herida" in combined
-                or "escala" in combined
-                or "cero al diez" in combined
-                or "0 al 10" in combined
-            ):
-                token = short.group("n")
-                return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
-            continue
-        token = match.group("num") or match.group("num2")
-        if not token:
-            continue
-        return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
-    return None
+FEVER_ALARM_C = 38.5
 
 ESCALATE_REQUEST_PATTERNS = [
     r"esc[aá]l(?:a|alo|arlo|e|arlo|eme|amelo|ámelo)",
@@ -109,11 +98,85 @@ class DecisionSignals:
     reassure_hits: list[str]
 
 
+def _parse_temp_token(token: str) -> float:
+    return float(token.replace(",", "."))
+
+
+def extract_temperature_c(text: str) -> float | None:
+    """Extrae temperatura corporal en °C del mensaje actual (no del historial)."""
+    lower = text.lower()
+    found: list[float] = []
+    for pattern in TEMPERATURE_PATTERNS:
+        for match in pattern.finditer(lower):
+            raw = match.group("temp")
+            if raw:
+                found.append(_parse_temp_token(raw))
+    if not found:
+        return None
+    return max(found)
+
+
+def history_asks_pain_scale(history_text: str) -> bool:
+    lower = history_text.lower()
+    return bool(
+        re.search(
+            r"(cero\s+al\s+diez|0\s+al\s+10|escala|nivel\s+de\s+dolor|"
+            r"del\s+0\s+al\s+10|cu[aá]nto\s+te\s+duele|n[uú]mero)",
+            lower,
+        )
+    )
+
+
+def extract_pain_score(text: str, history_text: str = "") -> int | None:
+    """
+    Extrae NRS 0-10 del mensaje actual.
+    Solo usa historial si el paciente responde corto a una pregunta de escala
+    (evita arrastrar 'dolor 0' de saludos o llamadas anteriores).
+    """
+    lower = text.lower().strip()
+
+    # No interpretar temperaturas (39 grados) como dolor
+    if extract_temperature_c(text) is not None and not re.search(
+        r"dolor|duele|/10|de\s*diez", lower
+    ):
+        return None
+
+    match = PAIN_SCORE_PATTERN.search(lower)
+    if match:
+        token = match.group("num") or match.group("num2")
+        if token:
+            return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
+
+    # Respuesta corta tipo "un seis" / "6" solo si el agente preguntó la escala
+    if history_asks_pain_scale(history_text):
+        short = re.search(
+            r"^\s*(?:lo\s+)?(?:siento\s+)?(?:un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s*\.?\s*$",
+            lower,
+        )
+        if not short:
+            short = re.search(
+                r"\b(?:lo\s+)?siento\s+(?:un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b",
+                lower,
+            )
+        if short:
+            token = short.group("n")
+            return int(token) if token.isdigit() else _WORD_TO_SCORE.get(token)
+
+    return None
+
+
 def collect_signals(text: str) -> DecisionSignals:
     lower = text.lower()
     alarms = [p for p in ALARM_PATTERNS if re.search(p, lower, re.IGNORECASE)]
     watches = [p for p in WATCH_PATTERNS if re.search(p, lower, re.IGNORECASE)]
     reassure = [p for p in REASSURING_PATTERNS if re.search(p, lower, re.IGNORECASE)]
+
+    temp = extract_temperature_c(text)
+    if temp is not None and temp >= FEVER_ALARM_C:
+        alarms.append(f"temperatura>={FEVER_ALARM_C}:{temp}")
+    elif temp is not None and 37.5 <= temp < FEVER_ALARM_C:
+        watches.append(f"temperatura_leve:{temp}")
+
     return DecisionSignals(alarms, watches, reassure)
 
 
@@ -156,6 +219,18 @@ def decide_from_text(
     signals = collect_signals(patient_text)
     wants_escalate = user_requests_escalation(patient_text, history_text)
     pain = extract_pain_score(patient_text, history_text)
+    temp = extract_temperature_c(patient_text)
+
+    if temp is not None and temp >= FEVER_ALARM_C:
+        return AgentDecision(
+            criticality=Criticality.rojo,
+            action=DecisionAction.escalate,
+            rationale=(
+                f"Fiebre/temperatura de alarma reportada ({temp} °C ≥ {FEVER_ALARM_C}). "
+                "Se prioriza evaluación humana."
+            ),
+            escalate=True,
+        )
 
     if pain is not None and pain >= 8:
         return AgentDecision(
@@ -257,3 +332,28 @@ def parse_criticality(value: str | None) -> Criticality:
         "unknown": Criticality.desconocido,
     }
     return mapping.get(normalized, Criticality.desconocido)
+
+
+def reply_matches_escalation_intent(reply: str) -> bool:
+    lower = (reply or "").lower()
+    return any(
+        k in lower
+        for k in ("médic", "medic", "urgenc", "escal", "profesional", "humano")
+    )
+
+
+def reply_ignores_current_alarm(patient_text: str, reply: str) -> bool:
+    """True si el paciente reportó alarma y el reply habla de otra cosa (p. ej. dolor viejo)."""
+    temp = extract_temperature_c(patient_text)
+    lower_reply = (reply or "").lower()
+    lower_msg = patient_text.lower()
+    if temp is not None and temp >= FEVER_ALARM_C:
+        if "fiebre" not in lower_reply and "temperatura" not in lower_reply:
+            if re.search(r"dolor\s+de\s+[0-4]|dolor\s+de\s+0", lower_reply):
+                return True
+            if "escal" not in lower_reply and "médic" not in lower_reply:
+                return True
+    if re.search(r"falta(?:ndo)?\s+(?:el\s+)?aire|pecho|sangrado", lower_msg):
+        if not reply_matches_escalation_intent(reply):
+            return True
+    return False

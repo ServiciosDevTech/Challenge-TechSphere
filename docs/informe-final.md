@@ -40,7 +40,9 @@ El Decision Engine (`backend/app/decision.py`) actúa como harness de seguridad 
 GOOGLE_API_KEY=...
 GEMINI_MODEL=gemini-flash-latest
 EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
-TTS_VOICE=es-CO-SalomeNeural
+TTS_VOICE=es-CO-GonzaloNeural
+TTS_RATE=-6%
+TTS_PITCH=-1Hz
 RAG_TOP_K=5
 ```
 
