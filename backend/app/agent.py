@@ -43,6 +43,8 @@ Personalidad:
 - Prioriza SIEMPRE el último mensaje del paciente sobre la memoria o el saludo.
 - Si reporta fiebre ≥38.5, falta de aire, dolor de pecho u otra alarma: escala ya; no hables de dolor viejo.
 - La MEMORIA es apoyo; no contradigas síntomas nuevos del mensaje actual.
+- El CONTEXTO DEL PACIENTE puede incluir día postoperatorio, procedimiento y demografía.
+  Úsalo para orientar la conversación; NO inventes síntomas que el paciente no haya dicho.
 
 Reglas clínicas obligatorias:
 1. SOLO orientaciones sustentadas en el CONTEXTO RAG. Si no hay evidencia, dilo y ofrece escalar.
@@ -262,7 +264,7 @@ class ClinicalAgent:
         temp = extract_temperature_c(message)
 
         # Alarmas del paciente primero: nunca responder con un protocolo irrelevante
-        if temp is not None and temp >= 38.5:
+        if temp is not None and temp >= 38.0:
             return (
                 f"Entiendo, {temp:g} grados es una temperatura alta y es un signo de alarma. "
                 "Prefiero no seguir solo: voy a escalar tu caso para que te revise "
@@ -305,7 +307,7 @@ class ClinicalAgent:
         if re.search(r"fiebre|calentura|temperatura", msg, re.IGNORECASE):
             return (
                 "Entiendo que has notado fiebre o calentura. ¿Pudiste medirte la temperatura? "
-                "Si pasa de 38.5 o tienes escalofríos fuertes, avísame para escalar."
+                "Si llega a 38 o más, o tienes escalofríos fuertes, avísame para escalar."
             )
 
         asks_zeta = any(k in msg for k in ("zeta-42", "zeta 42", "z42", "zeta42"))
@@ -493,8 +495,8 @@ class ClinicalAgent:
             f"CONTEXTO RAG:\n{self._build_context(hits)}\n\n"
             f"MENSAJE DEL PACIENTE (prioridad absoluta; responde a ESTE turno):\n"
             f"{safe_message}\n\n"
-            "Si el mensaje actual reporta fiebre ≥38.5 u otra alarma, escala ya. "
-            "No repitas consejos de dolor de turnos o llamadas anteriores.\n"
+            "Si el mensaje actual reporta fiebre ≥38 °C, secreción de la herida u otra "
+            "alarma, escala ya. No repitas consejos de dolor de turnos o llamadas anteriores.\n"
         )
 
         t1 = time.perf_counter()

@@ -28,11 +28,20 @@ ln -s ../ParticipantArtifacts-main/dataset data/dataset
 
 Copia `ParticipantArtifacts-main/dataset/textos` a `data/textos`.
 
-## Semilla rápida
+## Semilla de corpus (RAG)
 
 ```powershell
 cd backend
-.\.venv\Scripts\python scripts\seed_corpus.py --limit 5
+# Prioritarios de los 5 escenarios (recomendado)
+.\.venv\Scripts\python scripts\seed_corpus.py
+# Solo apendicectomía (más rápido)
+.\.venv\Scripts\python scripts\seed_corpus.py --appendicitis-only
 ```
+
+## Excel → llamada y evaluación
+
+- `GET /api/dataset/patients` — 40 pacientes + casos 1/3/7/14
+- `/call` — selector de paciente/caso; el agente recibe nombre/procedimiento/día (sin spoilear síntomas)
+- `scripts/eval_triage.py` — Decision Engine vs `label_ground_truth`
 
 La consola `/admin` también permite subir documentos uno a uno (requisito G5).

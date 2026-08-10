@@ -9,7 +9,9 @@ from app.models import AgentDecision, Criticality, DecisionAction
 ALARM_PATTERNS = [
     r"fiebre\s*(alta|mayor|muy\s*alta)",
     r"sangrado\s*(abundante|mucho|que no para)",
-    r"pus|supuraci[oó]n|secreci[oó]n\s*mal\s*oliente",
+    # Secreción/pus (lenguaje cotidiano del dataset CO)
+    r"pus|supuraci[oó]n|secreci[oó]n(\s*mal\s*oliente)?",
+    r"l[ií]quido\s*(amarillo|amarillito|feo|raro)|sale\s+l[ií]quido|saliendo\s+(?:ah[ií]\s+)?de\s+la\s+herida",
     # Cubrir: "falta de aire", "faltando el aire", "me falta el aire", "sin aire"
     r"dificultad\s*(para\s*)?respirar|ahogo|ahog|falta(?:ndo)?\s+(?:el\s+)?aire|me\s+falta\s+(?:el\s+)?aire|sin\s+aire|no\s+puedo\s+respirar",
     r"dolor\s*(insoportable|de\s*1[0]|del\s*diez|muy\s*fuerte|que no aguanto)",
@@ -18,6 +20,8 @@ ALARM_PATTERNS = [
     r"desmayo|me\s*desmay|p[eé]rdida\s*de\s*conocimiento",
     r"hinchaz[oó]n\s*(muy\s*)?(grande|severa)|pantorrilla\s*(roja|caliente|hinchada)",
     r"pecho\s*(me\s*)?duele|dolor\s*en\s*el\s*pecho|duele\s+el\s+pecho|me\s+duele\s+el\s+pecho",
+    # Deterioro funcional grave (artroplastia / postop)
+    r"no\s+puedo\s+(?:ni\s+)?levantarme|casi\s+no\s+puedo\s+levant|necesito\s+(?:que\s+)?alguien\s+me\s+ayude\s+para\s+todo|incapacitad|no\s+responde",
 ]
 
 WATCH_PATTERNS = [
@@ -41,15 +45,15 @@ REASSURING_PATTERNS = [
     r"caminando|ya\s*camino",
 ]
 
-# Temperatura en °C: 38, 38.5, 39, 40, "39 grados", "fiebre de 39"
+# Temperatura en °C: 38, 38.5, 39, "38 y algo", "marcó 38.2"
 _TEMP_TOKEN = r"(?P<temp>4\d(?:[.,]\d+)?|3[89](?:[.,]\d+)?)"
 TEMPERATURE_PATTERNS = [
     re.compile(
-        rf"(?:fiebre|temperatura|term[oó]metro|me\s+medi|me\s+med[ií]).{{0,48}}{_TEMP_TOKEN}",
+        rf"(?:fiebre|temperatura|term[oó]metro|me\s+medi|me\s+med[ií]|marc[oó]|marcaba|afiebr|calentura|escalofr).{{0,56}}{_TEMP_TOKEN}",
         re.IGNORECASE,
     ),
     re.compile(
-        rf"{_TEMP_TOKEN}\s*(?:grados|°\s*c|celsius|cent[ií]grados)",
+        rf"{_TEMP_TOKEN}\s*(?:grados|°\s*c|celsius|cent[ií]grados|y\s*algo|algo)",
         re.IGNORECASE,
     ),
     re.compile(
@@ -57,6 +61,12 @@ TEMPERATURE_PATTERNS = [
         re.IGNORECASE,
     ),
 ]
+# Contexto febril + número 38/39 suelto (dataset ruidoso / truncado)
+_FEVER_CONTEXT = re.compile(
+    r"fiebre|temperatura|term[oó]metro|afiebr|calentura|escalofr|sudad|acalor|marc[oó]|grados",
+    re.IGNORECASE,
+)
+_BARE_TEMP = re.compile(r"\b(?P<temp>3[89](?:[.,]\d+)?)\b")
 
 PAIN_SCORE_PATTERN = re.compile(
     r"(?:dolor|duele|nivel\s+de\s+dolor|escala|es\s+un|como\s+un).{0,24}?"
@@ -80,7 +90,8 @@ _WORD_TO_SCORE = {
     "diez": 10,
 }
 
-FEVER_ALARM_C = 38.5
+# Guías del corpus + trayectorias del reto: ≥38 °C ya es alarma postoperatoria frecuente
+FEVER_ALARM_C = 38.0
 
 ESCALATE_REQUEST_PATTERNS = [
     r"esc[aá]l(?:a|alo|arlo|e|arlo|eme|amelo|ámelo)",
@@ -111,6 +122,9 @@ def extract_temperature_c(text: str) -> float | None:
             raw = match.group("temp")
             if raw:
                 found.append(_parse_temp_token(raw))
+    if _FEVER_CONTEXT.search(lower):
+        for match in _BARE_TEMP.finditer(lower):
+            found.append(_parse_temp_token(match.group("temp")))
     if not found:
         return None
     return max(found)
@@ -175,7 +189,7 @@ def collect_signals(text: str) -> DecisionSignals:
     if temp is not None and temp >= FEVER_ALARM_C:
         alarms.append(f"temperatura>={FEVER_ALARM_C}:{temp}")
     elif temp is not None and 37.5 <= temp < FEVER_ALARM_C:
-        watches.append(f"temperatura_leve:{temp}")
+        watches.append(f"temperatura_subfebril:{temp}")
 
     return DecisionSignals(alarms, watches, reassure)
 

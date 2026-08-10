@@ -115,41 +115,68 @@ Abre:
 
 Si el snapshot deja de existir, el agente prueba automáticamente otros Flash (`gemini-3.1-flash-lite-preview`, `gemini-2.0-flash-lite`, etc.). Guía: [`docs/setup-gemini.md`](docs/setup-gemini.md).
 
+## Dataset del reto (ParticipantArtifacts)
+
+El material oficial se consume así:
+
+| Archivo | Uso en PostOp Care |
+|---|---|
+| `dataset/textos/` (107 PDF) | Corpus RAG (semilla prioritaria multi-escenario + `/admin`) |
+| `dataset_final.xlsx` | Casos/diálogos + `label_ground_truth` para eval offline |
+| `trayectorias_postop_silver.xlsx` | Guion de demo (síntomas) — **no** se envía al LLM |
+| `perfiles_clinicos_*.xlsx` + `perfiles_pacientes_co.xlsx` | Paciente/procedimiento/día al iniciar llamada |
+
+```powershell
+# Junction (una vez)
+cmd /c mklink /J data\textos "..\ParticipantArtifacts-main\dataset\textos"
+cmd /c mklink /J data\dataset "..\ParticipantArtifacts-main\dataset"
+
+# Sembrar corpus prioritario (5 escenarios)
+cd backend
+.\.venv\Scripts\python scripts\seed_corpus.py
+
+# Eval triage vs ground truth (Decision Engine)
+.\.venv\Scripts\python scripts\eval_triage.py
+# Última corrida local (capa1_limpia, 160 casos): recall rojo ≈ 83% (10/12);
+# los 2 fallos son relatos muy evasivos sin cifra de fiebre ni secreción explícita
+# (el LLM en llamada debe indagar; el harness solo usa heurísticas).
+```
+
+API: `GET /api/dataset/patients`, `GET /api/dataset/cases/{caso_id}`, `GET /api/dataset/stats`.
+
+En `/call` puedes elegir **paciente + caso (día 1/3/7/14)** del dataset. El panel “Guion del caso” muestra la trayectoria solo para el operador de la demo.
+
 ## Métricas (obligatorias en README)
 
-Se exponen en `GET /api/metrics` y en `/historial`. Tras una sesión local de desarrollo:
-
-| Métrica | Cómo se mide |
-|---|---|
-| Latencia P50 / P95 | Desde fin de turno de paciente hasta respuesta del agente (`total_ms` en logs) |
-| Tokens in/out | `usage_metadata` de Gemini por turno |
-| Invocaciones LLM / consultas RAG | Contadores por evento |
-| Costo estimado / llamada | Extrapolación a precios orientativos de producción; en free tier el costo real es **US$0** |
-
-> Ejecuta al menos una llamada real y consulta `/historial` o `GET /api/metrics` para pegar números verificables antes de la entrega. No reportes cifras que no estén en tus logs.
-
-Ejemplo de formato (rellenar tras tu smoke test):
+Medidas en esta instalación vía `GET /api/metrics` (logs locales verificables):
 
 ```text
-Latencia respuesta (paciente deja de hablar → audio agente): P50 ≈ _ ms · P95 ≈ _ ms
-Tokens promedio / turno: in _ · out _
-Invocaciones LLM / turno: 1
-Consultas RAG / llamada: ≈ N turnos
-Costo estimado / llamada (extrapolado): US$ _
+Latencia respuesta (turno paciente → respuesta agente): P50 ≈ 5394 ms · P95 ≈ 9269 ms
+Tokens promedio / turno: in ≈ 1043 · out ≈ 81
+Invocaciones LLM / turno: 1 (cuando hay API key)
+Consultas RAG / evento: 1
+Eventos registrados: 43 · llamadas: 28
+Costo estimado / llamada (extrapolado a $0.10/1M in + $0.40/1M out): US$ 0.000103
+Costo real en free tier AI Studio: US$ 0
 ```
+
+> Re-consulta `/historial` o `GET /api/metrics` antes de la entrega final si corres más sesiones; actualiza estas cifras para que coincidan con tus logs.
 
 ## Pruebas
 
 ```powershell
 cd backend
 .\.venv\Scripts\pytest -q
+.\.venv\Scripts\python scripts\eval_triage.py
 ```
 
 Incluye:
 
 - Unitarias del motor de decisión y PII
 - Integración RAG: alta → retrieval → baja → olvido
-- Golden triage (verde / amarillo / rojo)
+- Golden triage + escenarios clínicos
+- Carga del dataset xlsx (40 pacientes / 160 casos)
+- Eval offline contra `label_ground_truth` (`scripts/eval_triage.py`)
 
 ## Estructura
 

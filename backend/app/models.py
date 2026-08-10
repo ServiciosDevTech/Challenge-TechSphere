@@ -96,6 +96,7 @@ class CallSummary(BaseModel):
 
 class StartCallRequest(BaseModel):
     patient_id: str | None = None
+    caso_id: str | None = None
     procedure: str | None = None
     patient_name: str | None = None
     dia_postop: int | None = None
@@ -107,6 +108,8 @@ class StartCallResponse(BaseModel):
     agent_name: str = "Beto"
     product_slogan: str = "Asistente inteligente de seguimiento postoperatorio"
     returning_patient: bool = False
+    patient_context: dict[str, Any] = Field(default_factory=dict)
+    demo_script: dict[str, Any] | None = None
 
 
 class EndCallResponse(BaseModel):

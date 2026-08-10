@@ -109,16 +109,52 @@ def rag_query(body: QueryRequest) -> QueryResponse:
     return QueryResponse(hits=hits)
 
 
+@router.get("/dataset/stats")
+def dataset_stats() -> dict:
+    from app.dataset import load_dataset_bundle
+
+    return load_dataset_bundle()["stats"]
+
+
+@router.get("/dataset/patients")
+def dataset_patients(limit: int | None = 40) -> list[dict]:
+    from app.dataset import list_patients
+
+    return list_patients(limit=limit)
+
+
+@router.get("/dataset/cases/{caso_id}")
+def dataset_case(caso_id: str) -> dict:
+    from app.dataset import get_case, get_trajectory_for_case, resolve_call_context
+
+    case = get_case(caso_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso no encontrado")
+    resolved = resolve_call_context(caso_id=caso_id)
+    return {
+        "caso_id": caso_id,
+        "paciente_id": case["paciente_id"],
+        "dia_postop": case["dia_postop"],
+        "label_ground_truth": case["label_ground_truth"],
+        "trajectory": get_trajectory_for_case(caso_id),
+        "agent_context": resolved["agent_context"],
+        "demo_script": resolved["demo_script"],
+        "turn_counts": {k: len(v) for k, v in case["turns"].items()},
+    }
+
+
 @router.post("/calls/start", response_model=StartCallResponse)
 def start_call(body: StartCallRequest) -> StartCallResponse:
     settings = get_settings()
-    call_id, greeting, returning = get_call_store().start(body)
+    started = get_call_store().start(body)
     return StartCallResponse(
-        call_id=call_id,
-        greeting=greeting,
+        call_id=started["call_id"],
+        greeting=started["greeting"],
         agent_name=settings.agent_name,
         product_slogan=settings.product_slogan,
-        returning_patient=returning,
+        returning_patient=started["returning_patient"],
+        patient_context=started.get("patient_context") or {},
+        demo_script=started.get("demo_script"),
     )
 
 
@@ -127,12 +163,17 @@ def call_turn(body: ChatTurnRequest) -> ChatTurnResponse:
     store = get_call_store()
     call_id = body.call_id
     if not call_id:
-        call_id, _, _ = store.start(StartCallRequest())
+        started = store.start(StartCallRequest())
+        call_id = started["call_id"]
+
+    # Preferir contexto persistido de la llamada (dataset) sobre el del cliente
+    record = store.get(call_id) or {}
+    patient_context = body.patient_context or record.get("patient_context") or {}
 
     result = get_agent().respond(
         message=body.message,
         history=body.history,
-        patient_context=body.patient_context,
+        patient_context=patient_context,
         call_id=call_id,
         call_state=store.get_call_state(call_id),
     )

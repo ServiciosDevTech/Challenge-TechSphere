@@ -17,11 +17,17 @@ def build_greeting(
     patient_name: str | None,
     procedure: str | None = None,
     prior_summary: str | None = None,
+    dia_postop: int | None = None,
 ) -> str:
     """Saludo hablable con variación entre llamadas."""
     name = first_name(patient_name)
     proc = (procedure or "").strip()
     proc_bit = f" después de tu {proc.lower()}" if proc else " después de tu cirugía"
+    day_bit = (
+        f" Estamos en el día {int(dia_postop)} después de la cirugía."
+        if dia_postop is not None
+        else ""
+    )
 
     if prior_summary:
         templates = [
@@ -46,25 +52,25 @@ def build_greeting(
     templates = [
         (
             f"Hola {name}, soy {agent_name}. Voy a acompañarte en esta llamada "
-            f"para saber cómo te has sentido{proc_bit}. ¿Cómo estás hoy?"
+            f"para saber cómo te has sentido{proc_bit}.{day_bit} ¿Cómo estás hoy?"
         ),
         (
             f"Hola {name}, soy {agent_name}, tu asistente de recuperación. "
-            f"Cuéntame, ¿cómo te has sentido{proc_bit}?"
+            f"Cuéntame, ¿cómo te has sentido{proc_bit}?{day_bit}"
         ),
         (
             f"Buenas, {name}. Habla {agent_name}. "
-            f"Estoy aquí para revisar contigo cómo va tu recuperación. "
+            f"Estoy aquí para revisar contigo cómo va tu recuperación.{day_bit} "
             f"¿Cómo te sientes en este momento?"
         ),
         (
             f"Hola {name}, soy {agent_name}. "
-            f"Quiero saber cómo ha ido tu recuperación{proc_bit}. "
+            f"Quiero saber cómo ha ido tu recuperación{proc_bit}.{day_bit} "
             f"¿Has notado algo que te preocupe?"
         ),
         (
             f"{name}, hola. Soy {agent_name}. "
-            f"Esta llamada es para acompañarte en el seguimiento. "
+            f"Esta llamada es para acompañarte en el seguimiento.{day_bit} "
             f"¿Cómo has estado desde la cirugía?"
         ),
     ]

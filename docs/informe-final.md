@@ -50,7 +50,14 @@ RAG_TOP_K=5
 
 Etapas: scaffold → RAG vivo → agente/decisión → admin UI → voz → métricas → tests → docs.
 
-Pruebas automatizadas: unitarias de decisión, integración de olvido/aprendizaje RAG, golden triage.
+Uso del material `ParticipantArtifacts-main/dataset`:
+
+- PDF `textos/` indexados (semilla multi-escenario + consola G5).
+- Excel de perfiles/trayectorias/diálogos cargados en runtime (`app/dataset.py`).
+- Al iniciar llamada se elige paciente/caso real del reto; la trayectoria queda solo como guion de demo (no va al LLM).
+- Eval offline `scripts/eval_triage.py` contra `label_ground_truth` (prioridad: no perder rojos).
+
+Pruebas automatizadas: unitarias de decisión, integración RAG, golden triage, carga del dataset xlsx.
 
 ## 7. Capturas / evidencia para el video
 

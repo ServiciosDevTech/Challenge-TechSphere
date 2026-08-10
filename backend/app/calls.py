@@ -99,30 +99,49 @@ class CallStore:
     def _path(self, call_id: str) -> Path:
         return self.settings.calls_path / f"{call_id}.json"
 
-    def start(self, req: StartCallRequest) -> tuple[str, str, bool]:
+    def start(self, req: StartCallRequest) -> dict[str, Any]:
+        from app.dataset import resolve_call_context
+
+        resolved = resolve_call_context(
+            paciente_id=req.patient_id,
+            caso_id=req.caso_id,
+            patient_name=req.patient_name,
+            procedure=req.procedure,
+            dia_postop=req.dia_postop,
+        )
+        agent_ctx = resolved["agent_context"]
+        name = str(agent_ctx.get("patient_name") or req.patient_name or "Paciente Demo")
+        procedure = str(agent_ctx.get("procedure") or req.procedure or "")
+        dia = agent_ctx.get("dia_postop")
+        patient_id = agent_ctx.get("patient_id") or req.patient_id
+        caso_id = agent_ctx.get("caso_id") or req.caso_id
+
         call_id = new_id("call_")
-        prior = self.find_latest_for_patient(req.patient_name)
+        prior = self.find_latest_for_patient(name)
         prior_summary = summarize_prior_call(prior) if prior else None
         greeting = build_greeting(
             agent_name=self.settings.agent_name,
-            patient_name=req.patient_name,
-            procedure=req.procedure,
+            patient_name=name,
+            procedure=procedure,
             prior_summary=prior_summary,
+            dia_postop=int(dia) if dia is not None else None,
         )
         seed_state: dict[str, Any] = {}
         record = {
             "call_id": call_id,
-            "patient_id": req.patient_id,
-            "procedure": req.procedure,
-            "patient_name": req.patient_name,
-            "dia_postop": req.dia_postop,
+            "patient_id": patient_id,
+            "caso_id": caso_id,
+            "procedure": procedure,
+            "patient_name": name,
+            "dia_postop": dia,
+            "patient_context": agent_ctx,
+            "demo_script": resolved.get("demo_script"),
             "started_at": datetime.now(timezone.utc).isoformat(),
             "ended_at": None,
             "transcript": [{"role": "agent", "content": greeting}],
             "sources_used": [],
             "decisions": [],
             "symptoms": [],
-            # Memoria de llamada empieza limpia; el saludo ya menciona el resumen previo.
             "call_state": seed_state,
             "prior_call_id": (prior or {}).get("call_id"),
             "prior_summary": prior_summary,
@@ -130,10 +149,18 @@ class CallStore:
         with self._lock:
             self._active[call_id] = record
             self._path(call_id).write_text(
-                json.dumps(record, ensure_ascii=False, indent=2),
+                json.dumps(record, ensure_ascii=False, indent=2, default=str),
                 encoding="utf-8",
             )
-        return call_id, greeting, bool(prior_summary)
+        return {
+            "call_id": call_id,
+            "greeting": greeting,
+            "returning_patient": bool(prior_summary),
+            "patient_context": agent_ctx,
+            "demo_script": resolved.get("demo_script"),
+            "patient_name": name,
+            "procedure": procedure,
+        }
 
     def find_latest_for_patient(self, patient_name: str | None) -> dict[str, Any] | None:
         if not patient_name or not patient_name.strip():
