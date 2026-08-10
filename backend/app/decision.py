@@ -69,10 +69,19 @@ _FEVER_CONTEXT = re.compile(
 _BARE_TEMP = re.compile(r"\b(?P<temp>3[89](?:[.,]\d+)?)\b")
 
 PAIN_SCORE_PATTERN = re.compile(
-    r"(?:dolor|duele|nivel\s+de\s+dolor|escala|es\s+un|como\s+un).{0,24}?"
+    r"(?:dolor|duele|nivel\s+de\s+dolor|escala|es\s+un|como\s+un|aproximadamente\s+(?:un\s+)?).{0,48}?"
     r"\b(?P<num>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b"
     r"|\b(?P<num2>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)"
     r"\s*(?:/10|de\s*diez|sobre\s*10|sobre\s*diez)\b",
+    re.IGNORECASE,
+)
+
+# "el dolor ... aproximadamente un cuatro" / "un 4 de dolor"
+PAIN_SCORE_LOOSE = re.compile(
+    r"(?:dolor|duele).{0,80}?\b(?:aproximadamente\s+)?(?:un\s+|como\s+|de\s+)?"
+    r"(?P<num>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b"
+    r"|\b(?:aproximadamente\s+)?(?:un\s+)?(?P<num2>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b"
+    r".{0,40}?(?:dolor|duele|/10|de\s*diez)",
     re.IGNORECASE,
 )
 
@@ -135,7 +144,8 @@ def history_asks_pain_scale(history_text: str) -> bool:
     return bool(
         re.search(
             r"(cero\s+al\s+diez|0\s+al\s+10|escala|nivel\s+de\s+dolor|"
-            r"del\s+0\s+al\s+10|cu[aá]nto\s+te\s+duele|n[uú]mero)",
+            r"del\s+0\s+al\s+10|cu[aá]nto\s+te\s+duele|n[uú]mero|"
+            r"c[oó]mo\s+sientes\s+el\s+dolor|dolor\s+cuando\s+camin)",
             lower,
         )
     )
@@ -155,7 +165,7 @@ def extract_pain_score(text: str, history_text: str = "") -> int | None:
     ):
         return None
 
-    match = PAIN_SCORE_PATTERN.search(lower)
+    match = PAIN_SCORE_PATTERN.search(lower) or PAIN_SCORE_LOOSE.search(lower)
     if match:
         token = match.group("num") or match.group("num2")
         if token:
@@ -170,6 +180,11 @@ def extract_pain_score(text: str, history_text: str = "") -> int | None:
         if not short:
             short = re.search(
                 r"\b(?:lo\s+)?siento\s+(?:un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b",
+                lower,
+            )
+        if not short:
+            short = re.search(
+                r"\b(?:aproximadamente\s+)?(?:un\s+)?(?P<n>10|[0-9]|cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\b",
                 lower,
             )
         if short:

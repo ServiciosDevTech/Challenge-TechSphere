@@ -16,9 +16,9 @@ El seguimiento postoperatorio temprano depende de personal humano, no escala bie
 
 ## 3. Modelo utilizado (declaración G3)
 
-- **Modelo:** Google Gemini Flash (`GEMINI_MODEL`, default `gemini-flash-latest`)
+- **Modelo:** Google Gemini Flash (`GEMINI_MODEL`, default recomendado `gemini-2.0-flash-lite`)
 - **Familia permitida:** Google Gemini, gama Flash
-- **Por qué:** contexto amplio para guías, free tier, baja fricción de setup frente a modelos locales, alineado al artefacto oficial (no al resumen desactualizado del video que mencionaba Claude).
+- **Por qué:** contexto amplio para guías, free tier, baja fricción de setup frente a modelos locales, alineado al artefacto oficial.
 
 > Nota: IDs puntuales cambian. Si uno falla (404), usa `gemini-flash-latest` u otro Flash vigente; el agente intenta respaldos automáticamente.
 
@@ -54,10 +54,10 @@ Uso del material `ParticipantArtifacts-main/dataset`:
 
 - PDF `textos/` indexados (semilla multi-escenario + consola G5).
 - Excel de perfiles/trayectorias/diálogos cargados en runtime (`app/dataset.py`).
-- Al iniciar llamada se elige paciente/caso real del reto; la trayectoria queda solo como guion de demo (no va al LLM).
+- En `/call` el procedimiento se elige desde los del dataset; el nombre es libre.
 - Eval offline `scripts/eval_triage.py` contra `label_ground_truth` (prioridad: no perder rojos).
 
-Pruebas automatizadas: unitarias de decisión, integración RAG, golden triage, carga del dataset xlsx.
+Pruebas automatizadas: unitarias de decisión, integración RAG, golden triage, carga del dataset xlsx, anti-repetición en fallback de caminar.
 
 ## 7. Capturas / evidencia para el video
 

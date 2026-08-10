@@ -2,29 +2,103 @@
 
 Agente de voz con IA para **seguimiento postoperatorio** en español colombiano.
 
-El paciente habla desde el navegador. El agente consulta una base de conocimiento clínica (**RAG dinámico**), responde solo con evidencia documental, y decide si la evolución es esperada o si debe **escalar a un humano**.
+El paciente habla desde el navegador. **Beto** (PostOp Care) consulta una base de conocimiento clínica (**RAG dinámico**), responde con evidencia documental trazable, clasifica criticidad (`verde` / `amarillo` / `rojo`) y **escala a un humano** cuando hay alarma o incertidumbre peligrosa.
 
 > Datos sintéticos. No es un dispositivo médico ni un sistema de atención real.
+
+---
+
+## Entregables (enlaces para el jurado)
+
+Carpeta compartida con **video demo**, **diagrama de arquitectura** e **informe final**:
+
+**[Google Drive — TechSphere Challenge 2026](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing)**
+
+| Entregable | Dónde encontrarlo |
+|---|---|
+| **Video demo** | En la [carpeta de Drive](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing) (`Reto TechSphere.mp4`) |
+| **Informe final** | En la misma carpeta de Drive · también en el repo: [`docs/informe-final.md`](docs/informe-final.md) |
+| **Diagrama de arquitectura** | En la misma carpeta de Drive · también en el repo: [`docs/arquitectura.md`](docs/arquitectura.md) |
+
+### LLM y herramientas de voz (declaración)
+
+| Rol | Herramienta |
+|---|---|
+| **LLM** | Google Gemini Flash (`GEMINI_MODEL`, free tier [AI Studio](https://aistudio.google.com/apikey)) |
+| **STT (voz → texto)** | Web Speech API del navegador |
+| **TTS (texto → voz)** | edge-tts · voz `es-CO-GonzaloNeural` (agente Beto) |
+
+---
 
 ## Compuertas que cubre esta entrega
 
 | Compuerta | Cómo se cumple |
 |---|---|
-| G1 Entregables | Repo + `docs/` (arquitectura, informe, guion de video) |
-| G2 ≤15 min | Scripts de arranque + README |
+| G1 Entregables | Repo público + informe + diagrama + video (enlaces arriba) |
+| G2 ≤15 min | Scripts de arranque + este README |
 | G3 Modelo permitido | **Google Gemini Flash** (`GEMINI_MODEL`, free tier AI Studio) |
 | G4 Voz en navegador | `/call` con micrófono (Web Speech API) + TTS `edge-tts` |
 | G5 Conocimiento vivo | `/admin` subir/eliminar documentos; efecto inmediato en el agente |
 
+---
+
+## Funcionalidades
+
+### Llamada (`/call`)
+- Inicio con **nombre del paciente** + **procedimiento** (select alimentado desde el dataset del reto).
+- Agente conversacional **Beto** con saludo hablado (TTS masculino colombiano).
+- Entrada por **voz** (pulsar Hablar) o **texto**.
+- Consulta **RAG** sobre el corpus indexado; respuestas con botón **Ver referencias** (documento, página, extracto).
+- Clasificación por turno: ícono verde / amarillo / rojo + rationale.
+- Memoria de la llamada (dolor, fiebre, etc.) para no contradecir el mensaje actual.
+- Escalamiento explícito ante alarmas (fiebre alta, falta de aire, dolor ≥8, etc.).
+- Finalizar llamada → resumen persistido.
+
+### Consola de administración (`/admin`) — G5
+- Subir PDF/TXT (opcionalmente con escenario).
+- Estado **Procesado y disponible** cuando el índice está listo.
+- Eliminar documento → el agente deja de usarlo (olvido en caliente).
+- Listado de documentos indexados.
+
+### Historial y métricas (`/historial`)
+- Listado de llamadas (paciente, procedimiento, alerta, turnos, refs).
+- Detalle en dos columnas: conversación compacta (agente izq. / paciente der.).
+- Por cada respuesta del agente: clasificación + **Ver referencias** de ese turno.
+- Métricas: latencia P50/P95, costo estimado / llamada, consultas RAG.
+
+### Backend / agente
+- FastAPI: llamadas, turnos, TTS, documentos, dataset, métricas.
+- **Decision Engine** (heurísticas + LLM) prioriza no perder rojos.
+- Fallback hablable si Gemini no responde (cuota/error).
+- Cadena de modelos Flash de respaldo ante 404/429.
+- Enmascarado de PII en logs; corpus y llamadas en disco local.
+
+### Dataset del reto (offline / eval)
+- Carga de Excel oficiales (perfiles, trayectorias, diálogos).
+- Semilla multi-escenario del corpus PDF.
+- Eval triage vs `label_ground_truth` (`scripts/eval_triage.py`).
+
+---
+
 ## Arquitectura (resumen)
 
 ```text
-Paciente (voz) → React /call → FastAPI → RAG Chroma + Gemini Flash → Decisión → Paciente / Escalamiento
-                     ↑
-              React /admin (alta/baja de PDFs en caliente)
+Paciente (voz/texto)
+    → React /call
+        → FastAPI /api/calls/*
+            → RAG (Chroma + embeddings multilingual)
+            → Gemini Flash (JSON: reply + criticality)
+            → Decision Engine (override de seguridad)
+            → TTS edge-tts
+    ← respuesta + citas + criticidad
+
+React /admin → alta/baja PDF → Chroma (conocimiento vivo)
+React /historial ← JSON de llamadas + metrics/events.json
 ```
 
 Detalle: [`docs/arquitectura.md`](docs/arquitectura.md)
+
+---
 
 ## Stack
 
@@ -34,133 +108,181 @@ Detalle: [`docs/arquitectura.md`](docs/arquitectura.md)
 | Backend | Python 3.11+ / FastAPI |
 | Frontend | React + Vite + TypeScript |
 | RAG | ChromaDB + `paraphrase-multilingual-MiniLM-L12-v2` |
-| STT | Web Speech API (`es-CO`) |
+| STT | Web Speech API (`es-ES` / `es-CO`) |
 | TTS | edge-tts (`es-CO-GonzaloNeural`) · agente **Beto** |
+
+---
 
 ## Requisitos previos
 
+- Windows 10/11 (scripts `.bat`) o Linux/macOS (`.sh`)
 - Python **3.11+** (probado con 3.13)
 - Node.js **20+**
 - Cuenta gratuita en [Google AI Studio](https://aistudio.google.com/apikey) → `GOOGLE_API_KEY`
-- Micrófono y Chrome/Edge recomendados para voz
-- Corpus clínico del reto en `data/textos` (ver [`data/README.md`](data/README.md))
+- Micrófono + **Chrome o Edge** recomendados para voz (Opera suele fallar el STT)
+- Corpus del reto **opcional**: puedes subir PDFs solo desde `/admin` (ver [`data/README.md`](data/README.md))
 
-## Arranque en ≤15 minutos
+---
 
-### 1. Clonar e instalar
+## Arranque paso a paso (≤15 minutos)
+
+### 1. Clonar el repositorio
 
 ```powershell
 git clone https://github.com/ServiciosDevTech/Challenge-TechSphere.git
 cd Challenge-TechSphere
-copy .env.example .env
-# Edita .env y pega GOOGLE_API_KEY=...
+```
 
+### 2. Configurar variables de entorno
+
+```powershell
+copy .env.example .env
+```
+
+Edita `.env` y define al menos:
+
+```env
+GOOGLE_API_KEY=tu_clave_de_ai_studio
+GEMINI_MODEL=gemini-2.0-flash-lite
+```
+
+> Si un modelo se queda sin cuota (429), cambia `GEMINI_MODEL` a otro Flash vigente o espera el reset diario. El agente también prueba respaldos automáticamente.
+
+### 3. Instalar backend
+
+```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\pip install -r requirements.txt
-cd ..\frontend
-npm install
+cd ..
 ```
 
-### 2. Datos clínicos
+### 4. Instalar frontend
 
 ```powershell
-# Si tienes ParticipantArtifacts-main junto a este repo:
-cmd /c mklink /J data\textos "..\ParticipantArtifacts-main\dataset\textos"
+cd frontend
+npm install
+cd ..
 ```
 
-O copia la carpeta `textos` del artefacto a `data/textos`.
+### 5. Datos clínicos (opcional)
 
-### 3. (Opcional) Sembrar corpus
+Sin corpus precargado también puedes usar solo `/admin` para subir documentos (G5).
+
+Si tienes `ParticipantArtifacts-main` como carpeta hermana del repo:
+
+```powershell
+cmd /c mklink /J data\textos "..\ParticipantArtifacts-main\dataset\textos"
+cmd /c mklink /J data\dataset "..\ParticipantArtifacts-main\dataset"
+```
+
+### 6. Sembrar corpus (opcional)
+
+Solo si enlazaste `data/textos` o quieres las muestras locales:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python scripts\seed_corpus.py --limit 6
+.\.venv\Scripts\python scripts\seed_corpus.py
+cd ..
 ```
 
-Esto indexa `data/samples/*.txt` y guías prioritarias de apendicectomía (plan de cuidado, instrucciones postoperatorias, etc.) si `data/textos` está disponible.
+También puedes saltarte este paso y subir PDFs después desde `/admin`.
 
-### 4. Levantar
+### 7. Levantar servicios
 
-Terminal A:
+**Terminal A — backend**
 
 ```powershell
 .\scripts\start-backend.bat
 ```
 
-Terminal B:
+**Terminal B — frontend**
 
 ```powershell
 .\scripts\start-frontend.bat
 ```
 
-Abre:
+### 8. Abrir la app
 
-- Llamada: http://127.0.0.1:5173/call
-- Consola: http://127.0.0.1:5173/admin
-- API docs: http://127.0.0.1:8000/docs
+| Superficie | URL |
+|---|---|
+| Llamada | http://127.0.0.1:5173/call |
+| Consola (G5) | http://127.0.0.1:5173/admin |
+| Historial / métricas | http://127.0.0.1:5173/historial |
+| API docs | http://127.0.0.1:8000/docs |
+| Health | http://127.0.0.1:8000/api/health |
+
+Comprueba que `GET /api/health` muestre `gemini_configured: true`.
+
+---
 
 ## Demo rápido de G5 (conocimiento vivo)
 
-1. En `/admin`, sube un TXT/PDF de prueba con una frase inventada única (ej. “protocolo ZETA-42”).
-2. En `/call`, pregunta por ese protocolo: el agente debe citarlo.
-3. Elimina el documento en `/admin`.
-4. Repite la pregunta: el agente debe declarar que no tiene esa información / no citar ZETA-42.
+1. En `/admin`, sube un TXT/PDF con una frase inventada única (ej. “protocolo ZETA-42”).
+2. Espera **Procesado y disponible**.
+3. En `/call`, inicia llamada y pregunta por ese protocolo → debe citarlo (Ver referencias).
+4. Elimina el documento en `/admin`.
+5. Repite la pregunta → no debe citar ZETA-42; declara límite / ofrece escalar.
+
+---
+
+## Flujo de demo clínica sugerido
+
+1. Procedimiento: Apendicectomía · nombre libre.
+2. Caso leve: dolor 2, caminando → verde/amarillo, cuidados + pregunta nueva.
+3. Caso rojo: “tengo 39 grados de fiebre” → **rojo** + escalamiento.
+4. Finalizar → `/historial` con conversación, alerta y referencias.
+
+---
 
 ## Modelo declarado (G3)
 
-- **Familia:** Google Gemini, gama Flash
-- **Variable:** `GEMINI_MODEL` (default `gemini-flash-latest`)
-- **Por qué:** familia permitida por el artefacto, ventana de contexto amplia para guías clínicas, free tier suficiente para demo, una sola API key.
+- **Familia:** Google Gemini, gama Flash  
+- **Variable:** `GEMINI_MODEL` (default recomendado: `gemini-2.0-flash-lite`)  
+- **Por qué:** familia permitida por el artefacto, contexto amplio para guías, free tier, una sola API key, latencia razonable para demo de voz.
 
-Si el snapshot deja de existir, el agente prueba automáticamente otros Flash (`gemini-3.1-flash-lite-preview`, `gemini-2.0-flash-lite`, etc.). Guía: [`docs/setup-gemini.md`](docs/setup-gemini.md).
+Si el ID falla (404) o hay cuota (429), el agente prueba otros Flash (`gemini-flash-lite-latest`, `gemini-2.0-flash`, etc.). Guía: [`docs/setup-gemini.md`](docs/setup-gemini.md).
+
+---
 
 ## Dataset del reto (ParticipantArtifacts)
 
-El material oficial se consume así:
-
 | Archivo | Uso en PostOp Care |
 |---|---|
-| `dataset/textos/` (107 PDF) | Corpus RAG (semilla prioritaria multi-escenario + `/admin`) |
-| `dataset_final.xlsx` | Casos/diálogos + `label_ground_truth` para eval offline |
-| `trayectorias_postop_silver.xlsx` | Guion de demo (síntomas) — **no** se envía al LLM |
-| `perfiles_clinicos_*.xlsx` + `perfiles_pacientes_co.xlsx` | Paciente/procedimiento/día al iniciar llamada |
+| `dataset/textos/` (PDFs) | Corpus RAG (seed + `/admin`) |
+| `dataset_final.xlsx` | Casos/diálogos + `label_ground_truth` (eval offline) |
+| `trayectorias_postop_silver.xlsx` | Contexto / eval — no se inyecta como verdad al LLM en la llamada |
+| `perfiles_clinicos_*.xlsx` + `perfiles_pacientes_co.xlsx` | Procedimientos del select + perfiles para eval |
 
 ```powershell
-# Junction (una vez)
-cmd /c mklink /J data\textos "..\ParticipantArtifacts-main\dataset\textos"
-cmd /c mklink /J data\dataset "..\ParticipantArtifacts-main\dataset"
-
-# Sembrar corpus prioritario (5 escenarios)
 cd backend
 .\.venv\Scripts\python scripts\seed_corpus.py
-
-# Eval triage vs ground truth (Decision Engine)
 .\.venv\Scripts\python scripts\eval_triage.py
-# Última corrida local (capa1_limpia, 160 casos): recall rojo ≈ 83% (10/12);
-# los 2 fallos son relatos muy evasivos sin cifra de fiebre ni secreción explícita
-# (el LLM en llamada debe indagar; el harness solo usa heurísticas).
 ```
 
-API: `GET /api/dataset/patients`, `GET /api/dataset/cases/{caso_id}`, `GET /api/dataset/stats`.
+Última corrida local de referencia (capa1_limpia): recall rojo ≈ **83% (10/12)**; los 2 fallos son relatos muy evasivos sin cifra de fiebre ni secreción explícita (en llamada el LLM debe indagar; el harness solo usa heurísticas).
 
-En `/call` puedes elegir **paciente + caso (día 1/3/7/14)** del dataset. El panel “Guion del caso” muestra la trayectoria solo para el operador de la demo.
+API útiles: `GET /api/dataset/procedures`, `GET /api/dataset/stats`, `GET /api/dataset/patients`.
+
+---
 
 ## Métricas (obligatorias en README)
 
-Medidas en esta instalación vía `GET /api/metrics` (logs locales verificables):
+Medidas vía `GET /api/metrics` (logs en `backend/data/metrics/events.json`):
 
 ```text
-Latencia respuesta (turno paciente → respuesta agente): P50 ≈ 5394 ms · P95 ≈ 9269 ms
-Tokens promedio / turno: in ≈ 1043 · out ≈ 81
-Invocaciones LLM / turno: 1 (cuando hay API key)
+Latencia respuesta (turno → reply agente, sin TTS): P50 ≈ 1432 ms · P95 ≈ 3483 ms
+Tokens promedio / turno: in ≈ 1292 · out ≈ 205
+Invocaciones LLM / turno: 1 (con API key y cuota disponible)
 Consultas RAG / evento: 1
-Eventos registrados: 43 · llamadas: 28
-Costo estimado / llamada (extrapolado a $0.10/1M in + $0.40/1M out): US$ 0.000103
+Eventos registrados (muestra reciente): 5 · llamadas: 2
+Costo estimado / llamada (extrapolado $0.10/1M in + $0.40/1M out): ≈ US$ 0.0005
 Costo real en free tier AI Studio: US$ 0
 ```
 
-> Re-consulta `/historial` o `GET /api/metrics` antes de la entrega final si corres más sesiones; actualiza estas cifras para que coincidan con tus logs.
+> Re-consulta `GET /api/metrics` o `/historial` si corres más sesiones antes del push final, para que las cifras coincidan con tus logs. La latencia de voz extremo-a-extremo (fin de habla → inicio de audio) suma STT + LLM + TTS y suele ser mayor que el P50 del turno.
+
+---
 
 ## Pruebas
 
@@ -170,37 +292,41 @@ cd backend
 .\.venv\Scripts\python scripts\eval_triage.py
 ```
 
-Incluye:
+Incluye: decision engine, PII, RAG alta→retrieval→baja, escenarios clínicos, dataset xlsx, anti-repetición de preguntas en fallback.
 
-- Unitarias del motor de decisión y PII
-- Integración RAG: alta → retrieval → baja → olvido
-- Golden triage + escenarios clínicos
-- Carga del dataset xlsx (40 pacientes / 160 casos)
-- Eval offline contra `label_ground_truth` (`scripts/eval_triage.py`)
+---
 
-## Estructura
+## Estructura del repo
 
 ```text
 Challenge-TechSphere/
-  backend/          FastAPI + RAG + agente + TTS
-  frontend/         React ( /call · /admin · /historial )
-  data/             Corpus clínico (local)
-  docs/             Arquitectura, informe, video
+  backend/          FastAPI + RAG + agente + TTS + dataset
+  frontend/         React (/call · /admin · /historial)
+  data/             Corpus / dataset (local o junction)
+  docs/             Arquitectura + informe final
   scripts/          Arranque Windows/Linux
 ```
+
+---
 
 ## Seguridad / compliance (síntesis)
 
 - Sin login empresarial (fuera de alcance del reto)
 - `.env` fuera de git; PII enmascarada en logs (`mask_pii`)
-- El agente no inventa dosis/medicamentos; sin evidencia RAG → “no sé” / escalar
+- El agente no inventa dosis/medicamentos; sin evidencia RAG → declara límite / escala
 - Aviso visible de datos sintéticos en la UI
 
-## Entregables adicionales
+---
 
-- Diagrama y decisiones: [`docs/arquitectura.md`](docs/arquitectura.md)
-- Informe: [`docs/informe-final.md`](docs/informe-final.md)
-- Guion de video: [`docs/guion-video.md`](docs/guion-video.md)
+## Documentación en `docs/`
+
+| Documento | Contenido |
+|---|---|
+| [`docs/arquitectura.md`](docs/arquitectura.md) | Diagrama y flujo de decisión |
+| [`docs/informe-final.md`](docs/informe-final.md) | Informe final (modelo, prompts, proceso) |
+| [`docs/setup-gemini.md`](docs/setup-gemini.md) | Cómo obtener `GOOGLE_API_KEY` y elegir modelo Flash |
+
+---
 
 ## Licencia
 

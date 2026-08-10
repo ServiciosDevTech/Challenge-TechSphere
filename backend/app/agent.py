@@ -45,6 +45,9 @@ Personalidad:
 - La MEMORIA es apoyo; no contradigas síntomas nuevos del mensaje actual.
 - El CONTEXTO DEL PACIENTE puede incluir día postoperatorio, procedimiento y demografía.
   Úsalo para orientar la conversación; NO inventes síntomas que el paciente no haya dicho.
+- NUNCA repitas la misma pregunta o el mismo párrafo de la respuesta anterior.
+  Si el paciente ya contestó (p. ej. cómo duele al caminar), reconoce lo que dijo y avanza
+  con UNA pregunta nueva distinta (fiebre, herida, sueño, medicación) o cierra el tema.
 
 Reglas clínicas obligatorias:
 1. SOLO orientaciones sustentadas en el CONTEXTO RAG. Si no hay evidencia, dilo y ofrece escalar.
@@ -59,6 +62,7 @@ Reglas clínicas obligatorias:
 8. Responde SIEMPRE al último mensaje; no repitas la respuesta anterior si el tema cambió.
 9. Un documento irrelevante en el RAG no cuenta como evidencia para el síntoma actual.
 10. Actualiza memory_update con lo que aprendiste en ESTE turno (dolor, fiebre, etc.).
+11. Si el paciente ya dio un número de dolor o respondió tu pregunta, no vuelvas a pedir lo mismo.
 
 Debes responder ÚNICAMENTE con JSON válido (sin markdown):
 {{
@@ -166,7 +170,16 @@ class ClinicalAgent:
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
                 msg = str(exc).lower()
-                if "404" in msg or "not_found" in msg or "not available" in msg:
+                retryable = (
+                    "404" in msg
+                    or "not_found" in msg
+                    or "not available" in msg
+                    or "429" in msg
+                    or "resource_exhausted" in msg
+                    or "quota" in msg
+                    or "rate" in msg
+                )
+                if retryable:
                     logger.warning("Modelo %s falló (%s); probando otro…", model, exc)
                     continue
                 raise
@@ -299,6 +312,12 @@ class ClinicalAgent:
         if pain is not None and pain <= 4 and re.search(
             r"dolor|duele|/10|de\s*diez", msg, re.IGNORECASE
         ):
+            if re.search(r"camin|andar|pasear|moviliz", msg, re.IGNORECASE):
+                return (
+                    f"Entiendo: al caminar el dolor te sube como a {pain}. "
+                    "Sigue a tu ritmo, sin forzar ni cargar peso. "
+                    "¿Has notado fiebre o algún cambio en la herida?"
+                )
             return (
                 f"Listo, un dolor de {pain} suele ser manejable en casa. Camina según "
                 "tolerancia y mantén la herida limpia. ¿Quieres que revisemos otra molestia?"
@@ -319,7 +338,22 @@ class ClinicalAgent:
                 "en la escala del cero al diez. ¿Quieres que te repita algún punto?"
             )
 
+        already_asked_walk_pain = bool(
+            re.search(
+                r"dolor\s+cuando\s+camin|c[oó]mo\s+sientes\s+el\s+dolor",
+                history_text.lower(),
+            )
+        )
         if re.search(r"camin|andar|pasear|moviliz", msg, re.IGNORECASE):
+            if already_asked_walk_pain or pain is not None:
+                pain_bit = (
+                    f" con dolor alrededor de {pain}" if pain is not None else ""
+                )
+                return (
+                    f"Perfecto, gracias por contármelo{pain_bit}. "
+                    "Sigue caminando según tu tolerancia, sin forzar. "
+                    "¿Has tenido fiebre o notado algo raro en la herida?"
+                )
             return (
                 "Sí, puedes caminar según tu tolerancia, varias veces al día y sin forzar. "
                 "Evita levantar peso las primeras semanas. Cuéntame, ¿cómo sientes el dolor "
@@ -328,7 +362,7 @@ class ClinicalAgent:
 
         if re.search(r"herida|dolor", msg, re.IGNORECASE) or (
             "dolor" in history_text.lower()
-            and re.search(r"\b\d\b|seis|cinco", msg)
+            and re.search(r"\b\d\b|seis|cinco|cuatro", msg)
             and "fiebre" not in msg
         ):
             return (
@@ -442,6 +476,38 @@ class ClinicalAgent:
         letters = sum(ch.isalpha() for ch in text)
         return letters < max(8, len(text) // 3)
 
+    @staticmethod
+    def _last_agent_reply(history: list[ChatMessage]) -> str:
+        for msg in reversed(history):
+            if msg.role == "agent" and (msg.content or "").strip():
+                return msg.content.strip()
+        return ""
+
+    @staticmethod
+    def _is_near_duplicate_reply(candidate: str, previous: str) -> bool:
+        """Detecta si el agente está repitiendo casi la misma respuesta."""
+        if not candidate or not previous:
+            return False
+        a = re.sub(r"\s+", " ", candidate.lower()).strip()
+        b = re.sub(r"\s+", " ", previous.lower()).strip()
+        if len(a) < 20 or len(b) < 20:
+            return False
+        if a == b or a in b or b in a:
+            return True
+        ask_a = re.findall(r"[¿?]([^¿?]{8,80})", candidate)
+        ask_b = re.findall(r"[¿?]([^¿?]{8,80})", previous)
+        if ask_a and ask_b:
+            qa = re.sub(r"\s+", " ", ask_a[-1].lower()).strip(" .")
+            qb = re.sub(r"\s+", " ", ask_b[-1].lower()).strip(" .")
+            if qa and qb and (qa == qb or qa in qb or qb in qa):
+                return True
+        wa = {w for w in re.findall(r"[a-záéíóúñ]{4,}", a)}
+        wb = {w for w in re.findall(r"[a-záéíóúñ]{4,}", b)}
+        if not wa or not wb:
+            return False
+        overlap = len(wa & wb) / max(len(wa), len(wb))
+        return overlap >= 0.72
+
     def respond(
         self,
         message: str,
@@ -465,6 +531,7 @@ class ClinicalAgent:
         history_txt = "\n".join(
             f"{m.role}: {mask_pii(m.content)}" for m in history[-8:]
         )
+        last_agent = self._last_agent_reply(history)
         state = update_call_state(call_state, safe_message)
 
         def _attach_state(result: ChatTurnResponse) -> ChatTurnResponse:
@@ -492,11 +559,15 @@ class ClinicalAgent:
             f"MEMORIA DE ESTA LLAMADA (apoyo; NO contradigas el mensaje actual):\n"
             f"{format_call_state(state)}\n\n"
             f"HISTORIAL RECIENTE:\n{history_txt or '(inicio de llamada)'}\n\n"
+            f"TU ÚLTIMA INTERVENCIÓN (NO la repitas; el paciente ya respondió):\n"
+            f"{last_agent or '(ninguna aún)'}\n\n"
             f"CONTEXTO RAG:\n{self._build_context(hits)}\n\n"
             f"MENSAJE DEL PACIENTE (prioridad absoluta; responde a ESTE turno):\n"
             f"{safe_message}\n\n"
             "Si el mensaje actual reporta fiebre ≥38 °C, secreción de la herida u otra "
-            "alarma, escala ya. No repitas consejos de dolor de turnos o llamadas anteriores.\n"
+            "alarma, escala ya. No repitas consejos ni preguntas de turnos anteriores. "
+            "Reconoce lo que el paciente acaba de decir y avanza con una pregunta NUEVA "
+            "o cierra el tema con claridad.\n"
         )
 
         t1 = time.perf_counter()
@@ -556,11 +627,16 @@ class ClinicalAgent:
             )
 
         reply = str(parsed.get("reply") or "").strip()
-        if self._is_bad_patient_reply(reply):
-            logger.warning(
-                "Reply inválido del modelo (%r); usando respuesta hablable segura",
-                reply[:120],
-            )
+        if self._is_bad_patient_reply(reply) or self._is_near_duplicate_reply(
+            reply, last_agent
+        ):
+            if self._is_near_duplicate_reply(reply, last_agent):
+                logger.warning("Reply duplicado respecto al turno anterior; reformulando")
+            else:
+                logger.warning(
+                    "Reply inválido del modelo (%r); usando respuesta hablable segura",
+                    reply[:120],
+                )
             if decision.escalate:
                 reply = (
                     "Por lo que me cuentas, prefiero no seguir solo. "

@@ -2,10 +2,15 @@
 
 > **Importante:** el corpus PDF/Excel **no se versiona en Git** (nombres demasiado largos en Windows y peso excesivo). Solo se sube `data/samples/` y este README.
 
-Para reproducibilidad (compuerta G2), este proyecto espera el corpus clínico en:
+## ¿Es obligatorio precargar PDFs?
 
-- `data/textos/` — PDFs por escenario
-- `data/dataset/` — Excel del reto (opcional para demos/evaluación)
+**No.** El proyecto arranca sin `data/textos/`. Puedes subir documentos uno a uno desde **`/admin`** (eso cubre la compuerta G5).
+
+Tener el corpus del artefacto es **opcional pero recomendado** si quieres:
+
+- sembrar varias guías de golpe (`scripts/seed_corpus.py`),
+- demos clínicas más ricas sin subir archivo por archivo,
+- evaluación offline (`scripts/eval_triage.py`).
 
 ## Opción A — junction/symlink (desarrollo local)
 
@@ -28,20 +33,25 @@ ln -s ../ParticipantArtifacts-main/dataset data/dataset
 
 Copia `ParticipantArtifacts-main/dataset/textos` a `data/textos`.
 
-## Semilla de corpus (RAG)
+## Opción C — solo consola admin
+
+1. Levanta backend y frontend (ver README raíz).
+2. En http://127.0.0.1:5173/admin sube PDF/TXT.
+3. En `/call` pregunta sobre ese contenido; elimínalo y verifica que el agente ya no lo use.
+
+## Semilla de corpus (opcional)
 
 ```powershell
 cd backend
-# Prioritarios de los 5 escenarios (recomendado)
 .\.venv\Scripts\python scripts\seed_corpus.py
-# Solo apendicectomía (más rápido)
+# Más rápido (solo apendicectomía):
 .\.venv\Scripts\python scripts\seed_corpus.py --appendicitis-only
 ```
 
-## Excel → llamada y evaluación
+## Excel → evaluación (opcional)
 
-- `GET /api/dataset/patients` — 40 pacientes + casos 1/3/7/14
-- `/call` — selector de paciente/caso; el agente recibe nombre/procedimiento/día (sin spoilear síntomas)
+Con `data/dataset/` enlazado:
+
+- `GET /api/dataset/procedures` — procedimientos del select en `/call`
+- `GET /api/dataset/stats` — conteos del bundle
 - `scripts/eval_triage.py` — Decision Engine vs `label_ground_truth`
-
-La consola `/admin` también permite subir documentos uno a uno (requisito G5).

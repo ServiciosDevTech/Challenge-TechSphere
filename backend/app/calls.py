@@ -210,7 +210,12 @@ class CallStore:
                 {"role": "paciente", "content": mask_pii(user_message)}
             )
             record["transcript"].append(
-                {"role": "agent", "content": mask_pii(agent_reply)}
+                {
+                    "role": "agent",
+                    "content": mask_pii(agent_reply),
+                    "decision": decision.model_dump(),
+                    "sources": [s.model_dump() for s in sources],
+                }
             )
             record["decisions"].append(decision.model_dump())
             if call_state is not None:
@@ -266,6 +271,7 @@ class CallStore:
             summary = CallSummary(
                 call_id=call_id,
                 patient_id=record.get("patient_id"),
+                patient_name=record.get("patient_name"),
                 procedure=record.get("procedure"),
                 symptoms=record.get("symptoms") or [],
                 decision=last_decision,
@@ -290,27 +296,79 @@ class CallStore:
     def get(self, call_id: str) -> dict[str, Any] | None:
         path = self._path(call_id)
         if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-        return self._active.get(call_id)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return enrich_call_transcript(data)
+        active = self._active.get(call_id)
+        return enrich_call_transcript(active) if active else None
 
     def list_calls(self) -> list[dict[str, Any]]:
         items = []
         for path in sorted(self.settings.calls_path.glob("call_*.json"), reverse=True):
             data = json.loads(path.read_text(encoding="utf-8"))
+            decisions = data.get("decisions") or []
+            last = decisions[-1] if decisions else None
             items.append(
                 {
                     "call_id": data.get("call_id"),
                     "patient_id": data.get("patient_id"),
+                    "patient_name": data.get("patient_name"),
                     "procedure": data.get("procedure"),
                     "started_at": data.get("started_at"),
                     "ended_at": data.get("ended_at"),
                     "turns": len(data.get("transcript", [])),
+                    "criticality": (last or {}).get("criticality"),
+                    "escalate": (last or {}).get("escalate", False),
+                    "sources_count": len(data.get("sources_used") or []),
                 }
             )
         return items
 
 
 _store: CallStore | None = None
+
+
+def enrich_call_transcript(record: dict[str, Any]) -> dict[str, Any]:
+    """Adjunta decision/sources a turnos del agente cuando el JSON antiguo no los trae."""
+    transcript = list(record.get("transcript") or [])
+    decisions = list(record.get("decisions") or [])
+    sources_used = list(record.get("sources_used") or [])
+    if not transcript:
+        return record
+
+    has_inline = any(
+        t.get("role") == "agent" and (t.get("decision") or t.get("sources"))
+        for t in transcript
+    )
+    if has_inline:
+        return record
+
+    out: list[dict[str, Any]] = []
+    dec_i = 0
+    agent_reply_idxs: list[int] = []
+
+    for i, raw in enumerate(transcript):
+        msg = dict(raw)
+        if msg.get("role") == "agent":
+            is_greeting = i == 0 and not msg.get("decision")
+            if not is_greeting:
+                if not msg.get("decision") and dec_i < len(decisions):
+                    msg["decision"] = decisions[dec_i]
+                    dec_i += 1
+                if msg.get("sources") is None:
+                    msg["sources"] = []
+                agent_reply_idxs.append(len(out))
+        out.append(msg)
+
+    # Llamadas antiguas solo guardaban sources_used global
+    if sources_used and agent_reply_idxs:
+        for idx in agent_reply_idxs:
+            if not out[idx].get("sources"):
+                out[idx]["sources"] = list(sources_used)
+                out[idx]["sources_are_call_level"] = True
+
+    enriched = dict(record)
+    enriched["transcript"] = out
+    return enriched
 
 
 def get_call_store() -> CallStore:

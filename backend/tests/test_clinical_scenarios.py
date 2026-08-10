@@ -175,6 +175,41 @@ def test_fallback_caminar_no_escala(monkeypatch):
     assert "camin" in lower or "tolerancia" in lower
 
 
+def test_fallback_no_repite_pregunta_caminar(monkeypatch):
+    from app.config import get_settings
+    from app.models import ChatMessage
+
+    blank = get_settings().model_copy(update={"google_api_key": ""})
+    monkeypatch.setattr("app.agent.get_settings", lambda: blank)
+    agent = ClinicalAgent(settings=blank)
+    prior = [
+        ChatMessage(
+            role="agent",
+            content=(
+                "Sí, puedes caminar según tu tolerancia, varias veces al día y sin forzar. "
+                "Evita levantar peso las primeras semanas. Cuéntame, ¿cómo sientes el dolor "
+                "cuando caminas?"
+            ),
+        )
+    ]
+    result = agent.respond(
+        "cuando camino el dolor aumenta un poco aproximadamente un cuatro pero lo estoy haciendo a mi ritmo",
+        history=prior,
+        call_id="test_walk_followup",
+    )
+    lower = result.reply.lower()
+    assert "cómo sientes el dolor cuando caminas" not in lower
+    assert "4" in result.reply or "cuatro" in lower or "fiebre" in lower or "herida" in lower
+
+
+def test_extract_pain_aproximadamente_un_cuatro():
+    msg = (
+        "cuando camino el dolor aumenta un poco aproximadamente un cuatro "
+        "pero lo estoy haciendo a mi ritmo"
+    )
+    assert extract_pain_score(msg) == 4
+
+
 def test_reply_ignores_fever_alarm_detector():
     msg = "tengo 39 grados de fiebre"
     bad = "Listo, un dolor de 0 suele ser manejable en casa."

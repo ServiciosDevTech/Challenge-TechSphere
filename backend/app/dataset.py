@@ -165,6 +165,24 @@ def list_patients(limit: int | None = None) -> list[dict[str, Any]]:
     return patients
 
 
+def list_procedures() -> list[str]:
+    """Procedimientos únicos en perfiles clínicos del dataset."""
+    patients = load_dataset_bundle()["patients"]
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in patients:
+        raw = p.get("procedimiento")
+        if raw is None:
+            continue
+        name = str(raw).strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        out.append(name)
+    out.sort(key=lambda s: s.casefold())
+    return out
+
+
 def get_case(caso_id: str) -> dict[str, Any] | None:
     return load_dataset_bundle()["cases"].get(caso_id)
 

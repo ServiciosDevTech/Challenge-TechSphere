@@ -123,6 +123,13 @@ def dataset_patients(limit: int | None = 40) -> list[dict]:
     return list_patients(limit=limit)
 
 
+@router.get("/dataset/procedures")
+def dataset_procedures() -> list[str]:
+    from app.dataset import list_procedures
+
+    return list_procedures()
+
+
 @router.get("/dataset/cases/{caso_id}")
 def dataset_case(caso_id: str) -> dict:
     from app.dataset import get_case, get_trajectory_for_case, resolve_call_context

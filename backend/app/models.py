@@ -60,6 +60,8 @@ class AgentDecision(BaseModel):
 class ChatMessage(BaseModel):
     role: str
     content: str
+    decision: AgentDecision | None = None
+    sources: list[Citation] = Field(default_factory=list)
 
 
 class ChatTurnRequest(BaseModel):
@@ -84,6 +86,7 @@ class ChatTurnResponse(BaseModel):
 class CallSummary(BaseModel):
     call_id: str
     patient_id: str | None = None
+    patient_name: str | None = None
     procedure: str | None = None
     symptoms: list[str] = Field(default_factory=list)
     decision: AgentDecision | None = None
