@@ -146,6 +146,11 @@ GOOGLE_API_KEY=tu_clave_de_ai_studio
 GEMINI_MODEL=gemini-2.0-flash-lite
 ```
 
+> **No** pongas una API key real en `.env.example` ni en el repositorio (queda público y se puede abusar de la cuota).  
+> Crea tu propia clave gratis en [Google AI Studio](https://aistudio.google.com/apikey) (1–2 minutos) y pégala solo en tu `.env` local.
+>
+> Si el jurado necesita que le facilite una `GOOGLE_API_KEY` para la evaluación, puede contactarme por **WhatsApp** o **correo electrónico** usando los datos de contacto del formulario de inscripción / entrega. Respondo para generar o compartir una clave de evaluación sin publicar secretos en Git.
+
 > Si un modelo se queda sin cuota (429), cambia `GEMINI_MODEL` a otro Flash vigente o espera el reset diario. El agente también prueba respaldos automáticamente.
 
 ### 3. Instalar backend
