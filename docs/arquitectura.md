@@ -1,72 +1,211 @@
 # Arquitectura — PostOp Care
 
-## Diagrama de componentes
+Documento de entregable: **diagrama de la solución** y **flujo de decisión del agente**.
+
+Este archivo es la fuente oficial del diagrama (GitHub renderiza los bloques Mermaid). El video demo está en [Google Drive](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing).
+
+---
+
+## 1. Arquitectura de la solución (componentes)
+
+```mermaid
+flowchart TB
+  subgraph Cliente["Navegador del paciente / jurado"]
+    CALL["/call — Llamada<br/>STT Web Speech · UI Beto"]
+    ADMIN["/admin — Consola<br/>alta / baja de PDFs"]
+    HIST["/historial — Conversación<br/>alertas · refs · métricas"]
+  end
+
+  subgraph Backend["Backend FastAPI"]
+    API["API REST<br/>/api/calls · /api/documents · /api/tts"]
+    AGENT["ClinicalAgent<br/>prompt + memoria de llamada"]
+    RAG["Dynamic RAG<br/>Chroma + MiniLM multilingual"]
+    LLM["Gemini Flash<br/>JSON: reply + criticality"]
+    DE["Decision Engine<br/>heurísticas + override de seguridad"]
+    TTS["edge-tts<br/>es-CO-GonzaloNeural"]
+    STORE["Persistencia<br/>calls/ · metrics/ · uploads/"]
+  end
+
+  subgraph Externos["Servicios externos"]
+    GAPI["Google AI Studio<br/>GEMINI_MODEL"]
+    EDGE["Microsoft Edge TTS"]
+  end
+
+  CALL -->|HTTP turn / start / end| API
+  ADMIN -->|upload / delete| API
+  HIST -->|list / get call| API
+
+  API --> AGENT
+  API --> TTS
+  AGENT --> RAG
+  AGENT --> LLM
+  LLM --> GAPI
+  AGENT --> DE
+  DE -->|verde / amarillo / rojo| API
+  RAG -->|citas documentales| API
+  TTS --> EDGE
+  TTS -->|audio MPEG| CALL
+  AGENT --> STORE
+  ADMIN -.->|índice en caliente| RAG
+```
+
+### Lectura rápida
+
+| Capa | Qué hace |
+|---|---|
+| **UI `/call`** | Voz/texto, saludo de Beto, criticidad, botón Ver referencias |
+| **UI `/admin`** | Conocimiento vivo (G5): indexar o borrar PDF/TXT sin reiniciar |
+| **UI `/historial`** | Transcript, alerta final, refs por turno, latencias |
+| **ClinicalAgent** | Orquesta RAG + Gemini + memoria; anti-repetición de preguntas |
+| **Decision Engine** | No se fía solo del LLM: prioriza no perder rojos |
+| **RAG** | Chroma + embeddings; citas con filename / página / excerpt |
+
+---
+
+## 2. Flujo de un turno de llamada (secuencia)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Paciente
+  participant UI as React /call
+  participant API as FastAPI
+  participant RAG as Chroma RAG
+  participant LLM as Gemini Flash
+  participant DE as Decision Engine
+  participant TTS as edge-tts
+
+  P->>UI: Habla o escribe
+  UI->>API: POST /api/calls/turn
+  API->>RAG: query(mensaje)
+  RAG-->>API: top-k fragmentos + citas
+  API->>LLM: system + contexto RAG + historial + mensaje
+  LLM-->>API: JSON reply, criticality, escalate
+  API->>DE: decide_from_text(mensaje, señal LLM, RAG)
+  DE-->>API: criticidad final + escalate
+  API->>TTS: sintetizar reply
+  TTS-->>UI: audio MPEG
+  UI-->>P: Voz + texto + ícono + referencias
+  API->>API: guardar turno en calls/*.json + metrics
+```
+
+### Pasos en prosa
+
+1. `/calls/start` crea `call_id` y saludo hablado.
+2. El paciente habla (Web Speech) o escribe.
+3. RAG recupera top-k fragmentos; Gemini responde en JSON corto y hablable.
+4. El **Decision Engine** combina señales del relato con la salida del LLM (asimetría clínica).
+5. La UI muestra respuesta, criticidad y fuentes.
+6. TTS reproduce la respuesta.
+7. Al finalizar, queda el resumen en `backend/data/calls/`.
+
+---
+
+## 3. Flujo de decisión del agente (Decision Engine)
+
+Principio: **mejor un falso positivo controlado que un falso negativo** (no alertar cuando había que alertar).
 
 ```mermaid
 flowchart TD
-  paciente[Paciente_navegador]
-  callUI[Call_UI_React]
-  adminUI[Admin_UI_React]
-  api[FastAPI]
-  agent[ClinicalAgent]
-  rag[DynamicRAG_Chroma]
-  llm[Gemini_Flash]
-  decision[DecisionEngine]
-  tts[edge_tts]
-  store[CallLogs_Metrics]
+  IN([Mensaje del paciente<br/>+ criticality LLM<br/>+ ¿hay evidencia RAG?]) --> TEMP{¿Temperatura<br/>≥ 38 °C?}
 
-  paciente -->|voz_STT| callUI
-  callUI -->|HTTP_/calls/turn| api
-  adminUI -->|upload_delete| api
-  api --> agent
-  agent --> rag
-  agent --> llm
-  agent --> decision
-  api --> tts
-  tts -->|audio_mpeg| callUI
-  decision -->|verde_amarillo_rojo| callUI
-  agent --> store
-  rag -->|citations| store
+  TEMP -->|sí| ROJO[ROJO · escalate = true<br/>Escalar a humano]
+  TEMP -->|no| PAIN8{¿Dolor NRS ≥ 8?}
+
+  PAIN8 -->|sí| ROJO
+  PAIN8 -->|no| ALARM{¿Patrón de alarma?<br/>falta de aire, pecho,<br/>sangrado, pus, desmayo…<br/>¿LLM pide rojo?<br/>¿Paciente pide escalar?}
+
+  ALARM -->|sí| ROJO
+  ALARM -->|no| PAIN57{¿Dolor NRS 5–7?}
+
+  PAIN57 -->|sí| AMA[AMARILLO · continue_care<br/>Vigilancia · indagar más]
+  PAIN57 -->|no| SINRAG{¿Sin evidencia RAG<br/>útil / criticidad desconocida?}
+
+  SINRAG -->|sí| DESC[DESCONOCIDO · insufficient_info<br/>Declarar límite · ofrecer escalar]
+  SINRAG -->|no| WATCH{¿Señales de vigilancia<br/>o LLM amarillo?<br/>náuseas, herida inflamada…}
+
+  WATCH -->|sí| AMA
+  WATCH -->|no| OK{¿LLM verde<br/>o relato tranquilizador?}
+
+  OK -->|sí| VERDE[VERDE · continue_care<br/>Cuidados en casa · 1 pregunta nueva]
+  OK -->|no| AMA
+
+  ROJO --> OUT([Respuesta al paciente<br/>+ UI rojo + historial])
+  AMA --> OUT
+  DESC --> OUT
+  VERDE --> OUT
 ```
 
-## Flujo de una llamada
+### Señales que disparan **rojo** (ejemplos)
 
-1. `/calls/start` crea `call_id` y saludo.
-2. El paciente habla (Web Speech API) o escribe.
-3. El backend embebe la consulta, recupera top-k fragmentos en Chroma y llama a Gemini Flash con prompt clínico restringido.
-4. El **Decision Engine** combina señales heurísticas (alarma / vigilancia) con la criticidad del LLM. Asimetría clínica: prioriza no perder rojos.
-5. La UI muestra respuesta, criticidad y **fuentes** (`filename`, página, excerpt).
-6. TTS sintetiza la respuesta (`es-CO-GonzaloNeural`, voz masculina colombiana).
-7. Al finalizar, se persiste resumen estructurado en `backend/data/calls/`.
+- Fiebre / temperatura ≥ **38 °C**
+- Dolor ≥ **8 / 10**
+- Falta de aire, dolor de pecho, sangrado abundante, pus/secreción, desmayo
+- El paciente pide explícitamente hablar con un humano / escalar
+- El LLM marca `criticality=rojo` o `escalate=true` (el motor lo respeta)
 
-## RAG dinámico (G5)
+### **Amarillo**
 
-- Alta: `POST /api/documents` → extract → chunk → embed → upsert Chroma + registry JSON.
-- Estado visible: `Procesado y disponible`.
-- Baja: `DELETE /api/documents/{id}` elimina vectores por metadata `document_id` y el archivo.
-- Durante una llamada en curso, el siguiente turno ya ve el corpus actualizado (no hay caché de índice en el agente).
+- Dolor 5–7, náuseas, herida un poco inflamada, fiebre bajita, etc.
+- Seguimiento en casa + **una** pregunta concreta (sin repetir la anterior)
 
-## Decisiones técnicas clave
+### **Verde**
+
+- Evolución esperada / relato tranquilizador con evidencia RAG
+- Cuidados orientados al corpus + pregunta nueva o cierre
+
+### **Desconocido**
+
+- Sin evidencia documental suficiente → no inventar; declarar límite u ofrecer escalar
+
+---
+
+## 4. Conocimiento vivo (G5)
+
+```mermaid
+flowchart LR
+  A[Admin sube PDF/TXT] --> B[Extract + chunk + embed]
+  B --> C[Upsert Chroma<br/>document_id]
+  C --> D[Badge: Procesado y disponible]
+  D --> E[Siguiente turno /call<br/>ya puede citarlo]
+
+  F[Admin elimina documento] --> G[Borra vectores por document_id]
+  G --> H[Siguiente turno<br/>ya no lo cita]
+```
+
+- Alta: `POST /api/documents`
+- Baja: `DELETE /api/documents/{id}`
+- Sin reinicio del agente ni del índice global
+
+---
+
+## 5. Decisiones técnicas clave
 
 | Decisión | Alternativas | Elección | Riesgo |
 |---|---|---|---|
-| LLM | Groq Llama, Ollama local, Gemini Flash | Gemini Flash | Rate limit free tier |
-| Embeddings | BGE-M3 pesado, Gemini embeddings, MiniLM multilingüe | MiniLM multilingüe | Algo menos preciso que BGE-M3; setup más liviano (G2) |
-| Voz STT | Groq Whisper, Web Speech | Web Speech primero | Calidad variable; Whisper opcional después |
-| TTS | Kokoro, Piper, edge-tts | edge-tts | Dependencia de servicio Edge; sin API key |
-| Orquestación | LangChain, custom | Custom FastAPI | Menos magia, más control de prompts/citas |
+| LLM | Groq Llama, Ollama, Gemini Flash | Gemini Flash | Cuota free tier (429) |
+| Embeddings | BGE-M3, Gemini emb., MiniLM | MiniLM multilingual | Menos precisión que BGE; más liviano (G2) |
+| STT | Whisper, Web Speech | Web Speech | Ruido / Opera |
+| TTS | Kokoro, Piper, edge-tts | edge-tts Gonzalo | Dependencia Edge; sin API key |
+| Orquestación | LangChain, custom | FastAPI custom | Más control de prompts y citas |
 
-## Superficies
+---
 
-- **`/call`**: contrato de llamada de voz.
-- **`/admin`**: contrato de conocimiento vivo.
-- **`/historial`**: observabilidad y métricas.
-
-## Persistencia
+## 6. Persistencia
 
 | Ruta | Contenido |
 |---|---|
-| `backend/data/chroma/` | Índice vectorial + `documents.json` |
+| `backend/data/chroma/` | Índice vectorial + registry |
 | `backend/data/uploads/` | Archivos originales |
-| `backend/data/calls/` | Transcripts y resúmenes |
-| `backend/data/metrics/events.json` | Eventos de latencia/tokens |
+| `backend/data/calls/` | Transcripts, decisiones, sources por turno |
+| `backend/data/metrics/events.json` | Latencia / tokens / costo estimado |
+
+---
+
+## 7. Superficies de la aplicación
+
+| Ruta | Contrato |
+|---|---|
+| `/call` | Llamada de voz + chat |
+| `/admin` | Conocimiento vivo |
+| `/historial` | Observabilidad y métricas |

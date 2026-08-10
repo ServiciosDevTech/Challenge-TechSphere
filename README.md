@@ -10,15 +10,13 @@ El paciente habla desde el navegador. **Beto** (PostOp Care) consulta una base d
 
 ## Entregables (enlaces para el jurado)
 
-Carpeta compartida con **video demo**, **diagrama de arquitectura** e **informe final**:
-
-**[Google Drive — TechSphere Challenge 2026](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing)**
-
-| Entregable | Dónde encontrarlo |
+| Entregable | Ubicación |
 |---|---|
-| **Video demo** | En la [carpeta de Drive](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing) (`Reto TechSphere.mp4`) |
-| **Informe final** | En la misma carpeta de Drive · también en el repo: [`docs/informe-final.md`](docs/informe-final.md) |
-| **Diagrama de arquitectura** | En la misma carpeta de Drive · también en el repo: [`docs/arquitectura.md`](docs/arquitectura.md) |
+| **Video demo** | [Google Drive — `Reto TechSphere.mp4`](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing) |
+| **Informe final** | [`docs/informe-final.md`](docs/informe-final.md) (en este repositorio) |
+| **Diagrama de arquitectura y decisión** | [`docs/arquitectura.md`](docs/arquitectura.md) (en este repositorio; diagramas Mermaid renderizados por GitHub) |
+
+> El **informe** y el **diagrama** viven solo en GitHub para que el jurado los lea con formato y Mermaid. En Drive queda únicamente el **video**.
 
 ### LLM y herramientas de voz (declaración)
 
@@ -142,9 +140,11 @@ copy .env.example .env
 Edita `.env` y define al menos:
 
 ```env
-GOOGLE_API_KEY=tu_clave_de_ai_studio
+GOOGLE_API_KEY=
 GEMINI_MODEL=gemini-2.0-flash-lite
 ```
+
+Asigna en `GOOGLE_API_KEY` la clave de [Google AI Studio](https://aistudio.google.com/apikey).
 
 > **No** pongas una API key real en `.env.example` ni en el repositorio (queda público y se puede abusar de la cuota).  
 > Crea tu propia clave gratis en [Google AI Studio](https://aistudio.google.com/apikey) (1–2 minutos) y pégala solo en tu `.env` local.
@@ -280,12 +280,12 @@ Latencia respuesta (turno → reply agente, sin TTS): P50 ≈ 1432 ms · P95 ≈
 Tokens promedio / turno: in ≈ 1292 · out ≈ 205
 Invocaciones LLM / turno: 1 (con API key y cuota disponible)
 Consultas RAG / evento: 1
-Eventos registrados (muestra reciente): 5 · llamadas: 2
+Eventos registrados (muestra de entrega): 5 · llamadas: 2
 Costo estimado / llamada (extrapolado $0.10/1M in + $0.40/1M out): ≈ US$ 0.0005
 Costo real en free tier AI Studio: US$ 0
 ```
 
-> Re-consulta `GET /api/metrics` o `/historial` si corres más sesiones antes del push final, para que las cifras coincidan con tus logs. La latencia de voz extremo-a-extremo (fin de habla → inicio de audio) suma STT + LLM + TTS y suele ser mayor que el P50 del turno.
+Fuente: `GET /api/metrics` / panel `/historial`. La latencia de voz extremo-a-extremo (fin de habla → inicio de audio) suma STT + LLM + TTS y suele ser mayor que el P50 del turno.
 
 ---
 
@@ -327,9 +327,11 @@ Challenge-TechSphere/
 
 | Documento | Contenido |
 |---|---|
-| [`docs/arquitectura.md`](docs/arquitectura.md) | Diagrama y flujo de decisión |
-| [`docs/informe-final.md`](docs/informe-final.md) | Informe final (modelo, prompts, proceso) |
-| [`docs/setup-gemini.md`](docs/setup-gemini.md) | Cómo obtener `GOOGLE_API_KEY` y elegir modelo Flash |
+| [`docs/arquitectura.md`](docs/arquitectura.md) | Diagrama y flujo de decisión (Mermaid) |
+| [`docs/informe-final.md`](docs/informe-final.md) | Informe final + capturas |
+| [`docs/capturas/`](docs/capturas/) | Evidencia visual del demo |
+| [`docs/setup-gemini.md`](docs/setup-gemini.md) | Cómo obtener `GOOGLE_API_KEY` |
+| Video | [Google Drive](https://drive.google.com/drive/folders/1mVbegDRf-KAdfi5Z2rJQiof30KVWQOBl?usp=sharing) |
 
 ---
 

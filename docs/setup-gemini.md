@@ -1,44 +1,44 @@
-# Etapa 2 — Activar Gemini Flash
+# Configurar Gemini Flash (G3)
 
-El agente ya está cableado. Sin key corre en **modo plantilla** (fallback). Con key usa **Gemini Flash** (familia permitida G3).
+El agente ya está cableado. Sin `GOOGLE_API_KEY` corre en **modo plantilla** (fallback hablable). Con key usa **Gemini Flash** (familia permitida).
 
 ## 1. Crear la API key
 
-1. Entra a [Google AI Studio — API keys](https://aistudio.google.com/apikey)
-2. Inicia sesión con tu cuenta Google
-3. **Create API key**
-4. Copia la key (no la subas a Git ni al chat si puedes evitarlo)
+1. Entra a [Google AI Studio — API keys](https://aistudio.google.com/apikey).
+2. Inicia sesión con tu cuenta Google.
+3. Crea una API key y cópiala.
+4. **No** la subas a Git ni la dejes en `.env.example`.
 
 ## 2. Configurar el proyecto
 
-Edita el archivo `.env` en la raíz de `Challenge-TechSphere`:
+En la raíz del repo:
 
-```env
-GOOGLE_API_KEY=pega_aqui_tu_key
-GEMINI_MODEL=gemini-2.0-flash-lite
+```powershell
+copy .env.example .env
 ```
 
-> Usa un Flash **lite** para menor latencia (`gemini-2.0-flash-lite` o `gemini-flash-lite-latest`). Si falla, el agente prueba otros Flash automáticamente. Evita IDs que den 404 a cuentas nuevas (`gemini-2.5-flash`, `gemini-1.5-flash`).
+Edita `.env`:
+
+```env
+GOOGLE_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
+```
+
+Asigna tu clave en `GOOGLE_API_KEY`. Usa un Flash **lite** vigente para menor latencia. Si el ID falla (404) o hay cuota (429), el agente prueba otros Flash automáticamente.
+
+Si el jurado necesita una clave de evaluación, puede contactar al autor por WhatsApp o correo (datos del formulario de inscripción), como indica el README.
 
 ## 3. Reiniciar el backend
-
-Detén `start-backend.bat` (Ctrl+C) y vuelve a lanzarlo:
 
 ```powershell
 .\scripts\start-backend.bat
 ```
 
-En `/call` deberías ver el modelo activo (sin el aviso amarillo de “Gemini aún no está configurado”).
+Comprueba `GET http://127.0.0.1:8000/api/health` → `gemini_configured: true`.
 
 ## 4. Probar
 
-1. Sube o confirma `data/samples/protocolo_zeta42.txt` en `/admin`
-2. En `/call`, pregunta: “¿qué dice el protocolo ZETA-42?”
-3. Luego di: “me está faltando el aire” → debe pasar a **ROJO** y escalar (no repetir ZETA-42)
-4. Sin documentos: si ofrece escalar y respondes “sí, escálalo”, debe escalar de verdad
-
-## 5. Commit sugerido (cuando pase tu prueba)
-
-```text
-feat: enable Gemini Flash clinical agent with live grounding
-```
+1. Sube `data/samples/protocolo_zeta42.txt` (o cualquier TXT) en `/admin`.
+2. En `/call`, pregunta por ese contenido → debe citarlo.
+3. Relata una alarma (“me está faltando el aire” o “tengo 39 grados”) → **rojo** y escalamiento.
+4. Sin evidencia en el corpus: el agente declara el límite u ofrece escalar; si aceptas, escala.
